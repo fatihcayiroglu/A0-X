@@ -1,0 +1,19 @@
+name: A0-X P114 scanout liveness RTL (manual)
+on:
+  workflow_dispatch:
+jobs:
+  p114-rtl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Icarus
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y iverilog
+      - name: Behavioral oracle and static wiring checks
+        run: |
+          python3 -m unittest discover -s A0-GPU/tests -p 'test_p114_*.py' -v
+          python3 A0-GPU/tools/a0_p114_rtl_preflight.py
+      - name: Real P114 RTL simulation and top-level elaboration
+        run: python3 A0-GPU/tests/run_p114_scanout_liveness.py

@@ -1,0 +1,33 @@
+{
+  "commands": [
+    {
+      "opcode": 0,
+      "tag": 100,
+      "color": 1122867,
+      "vertices": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "opcode": 2,
+      "tag": 101,
+      "color": 0,
+      "vertices": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "expected_frame_crc32": [
+    "0x5a53b43"
+  ]
+}

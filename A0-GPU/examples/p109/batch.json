@@ -1,0 +1,17 @@
+{
+  "schema": "A0-P109-BATCH-v1",
+  "sessions": [
+    {
+      "plan": "session_1.plan.json",
+      "receipt": "session_1.receipt.json",
+      "capture": "session_1.capture.bin",
+      "sent_wire": "session_1.wire.bin"
+    },
+    {
+      "plan": "session_2.plan.json",
+      "receipt": "session_2.receipt.json",
+      "capture": "session_2.capture.bin",
+      "sent_wire": "session_2.wire.bin"
+    }
+  ]
+}

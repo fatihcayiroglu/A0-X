@@ -1,0 +1,48 @@
+name: A0-X P122 automatic 15-gate RTL qualification
+on:
+  push:
+    paths:
+      - 'A0-GPU/**'
+      - '.github/workflows/a0-p122-rtl-push-pr-qualification.yml'
+  pull_request:
+    paths:
+      - 'A0-GPU/**'
+      - '.github/workflows/a0-p122-rtl-push-pr-qualification.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p122-real-rtl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual RTL toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y iverilog
+          command -v iverilog && command -v vvp
+          iverilog -V && vvp -V
+      - name: Python packet oracle and gate-control tests (no substitutions for RTL)
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s A0-GPU/tests -p 'test_p122_*.py' -v
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s A0-GPU/tests -p 'test_p121_rtl_qualification.py' -v
+      - name: Mandatory real HDL qualification 15/15, zero skipped
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 python3 A0-GPU/tools/a0_p122_rtl_qualification.py --evidence EVIDENCE/P122/rtl_qualification
+      - name: Verify fail-closed qualified evidence
+        run: |
+          python3 - <<'PY'
+          import json
+          p=json.load(open('EVIDENCE/P122/rtl_qualification/qualification.json'))
+          assert p['status']=='PASS' and p['qualified'] is True
+          assert p['p121_evidence_valid'] is True and p['p122_status']=='PASS'
+          assert p['sources_unchanged'] is True and p['expected_gates']==15
+          PY
+      - name: Preserve raw logs even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-p122-actual-icarus-rtl-logs
+          path: EVIDENCE/P122/rtl_qualification/
+          if-no-files-found: error

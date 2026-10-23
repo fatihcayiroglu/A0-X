@@ -1,0 +1,19 @@
+name: A0-X P116 Host-to-Frame RTL Qualification (manual)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  host-frame-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Icarus Verilog
+        run: sudo apt-get update && sudo apt-get install -y iverilog
+      - name: Verify legacy extended-host RTL gate
+        run: python3 A0-GPU/tests/run_p106_extended_host.py
+      - name: Verify P115 frame audit RTL gate
+        run: python3 A0-GPU/tests/run_p115_frame_event_audit.py
+      - name: Verify true host-to-two-frame P116 E2E RTL gate
+        run: python3 A0-GPU/tests/run_p116_host_frame_audit_e2e.py

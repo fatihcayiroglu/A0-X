@@ -1,0 +1,54 @@
+name: A0-X P126 reset-boundary plus inherited 18 actual RTL gates
+on:
+  push:
+    paths:
+      - 'A0-GPU/**'
+      - '.github/workflows/a0-p126-reset-boundary-18-real-rtl.yml'
+  pull_request:
+    paths:
+      - 'A0-GPU/**'
+      - '.github/workflows/a0-p126-reset-boundary-18-real-rtl.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p126-host-and-real-rtl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual HDL simulator
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y iverilog
+          command -v iverilog
+          command -v vvp
+          iverilog -V
+      - name: Run P126 host regression and all 18 inherited actual RTL checks
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -B A0-GPU/tools/a0_p126_qualification.py \
+            --evidence EVIDENCE/P126/qualification
+      - name: Verify strict all-real evidence, no hardware certification
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path('EVIDENCE/P126/qualification/qualification.json').read_text())
+          assert report['status']=='PASS' and report['qualified'] is True
+          assert report['python_status']=='PASS'
+          assert report['rtl_status']=='PASS' and report['real_rtl_gates_verified']==18
+          assert report['inherited_evidence_valid'] is True
+          assert report['sources_unchanged'] is True
+          assert report['physical_gpu_qualified'] is False
+          assert report['device_reset_authenticated'] is False
+          PY
+      - name: Upload PASS/FAIL/NOT_RUN evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-p126-reset-boundary-and-18-real-rtl-evidence
+          path: EVIDENCE/P126/qualification/
+          if-no-files-found: warn

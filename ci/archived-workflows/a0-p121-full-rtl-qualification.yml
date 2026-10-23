@@ -1,0 +1,28 @@
+name: A0-X P121 mandatory full RTL qualification
+on:
+  workflow_dispatch:
+jobs:
+  p121-real-rtl:
+    name: All 14 real Icarus HDL gates (0 skips)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Icarus RTL simulation toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y iverilog
+          iverilog -V
+          vvp -V
+      - name: Execute mandatory P103-P118 HDL qualification suite
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 python3 A0-GPU/tools/a0_p121_rtl_qualification.py --evidence EVIDENCE/P121/rtl_qualification
+      - name: Upload all gate logs even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-p121-real-rtl-evidence
+          path: EVIDENCE/P121/rtl_qualification/
+          if-no-files-found: error

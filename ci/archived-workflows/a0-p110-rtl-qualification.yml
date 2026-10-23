@@ -1,0 +1,39 @@
+name: A0-X P110 RTL integration qualification (manual)
+'on':
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Icarus and Python tests
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y iverilog python3-pytest
+      - name: Offline structural preflight (does not qualify RTL)
+        run: |
+          mkdir -p qualification-logs
+          python3 A0-GPU/tools/a0_p110_rtl_wiring_preflight.py \
+            --json qualification-logs/p110_structural.json \
+            | tee qualification-logs/p110_structural.log
+          python3 -m pytest -q A0-GPU/tests/test_p110_rtl_wiring_preflight.py \
+            | tee qualification-logs/p110_mutation.log
+      - name: Mandatory compiled RTL tests (nonzero exits fail CI)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p qualification-logs
+          python3 A0-GPU/tests/run_p103_command_pixel.py 2>&1 | tee qualification-logs/p103_rtl.log
+          python3 A0-GPU/tests/run_p104_dual_bank.py 2>&1 | tee qualification-logs/p104_rtl.log
+          python3 A0-GPU/tests/run_p105_host_dual_bank.py 2>&1 | tee qualification-logs/p105_rtl.log
+          python3 A0-GPU/tests/run_p106_extended_host.py 2>&1 | tee qualification-logs/p106_rtl.log
+      - name: Publish evidence including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-p110-rtl-qualification
+          path: qualification-logs/
+          if-no-files-found: warn

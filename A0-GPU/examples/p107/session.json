@@ -1,0 +1,51 @@
+{
+  "schema": "A0-P107-SESSION-v1",
+  "width": 4,
+  "height": 4,
+  "reset_epoch": true,
+  "frames": [
+    {
+      "clear": {
+        "tag": 1,
+        "color": 1056816
+      },
+      "draws": [
+        {
+          "version": 2,
+          "tag": 2,
+          "color": 7833753,
+          "vertices": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "depth": 10,
+          "depth_op": 1,
+          "depth_write": true,
+          "blend": false,
+          "alpha": 255,
+          "scissor": [
+            0,
+            0,
+            4,
+            4
+          ]
+        }
+      ],
+      "present_tag": 3,
+      "expected_crc32": "0x430f2313"
+    },
+    {
+      "clear": {
+        "tag": 4,
+        "color": 11189196
+      },
+      "draws": [],
+      "present_tag": 5,
+      "expected_crc32": "0x34460c88"
+    }
+  ]
+}

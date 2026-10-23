@@ -1,0 +1,50 @@
+[
+  {
+    "tick": 1,
+    "accept": 16
+  },
+  {
+    "tick": 2,
+    "accept": 16
+  },
+  {
+    "tick": 3,
+    "accept": 16
+  },
+  {
+    "tick": 4,
+    "accept": 16
+  },
+  {
+    "tick": 5,
+    "accept": 16
+  },
+  {
+    "tick": 6,
+    "accept": 8
+  },
+  {
+    "tick": 7,
+    "accept": 16
+  },
+  {
+    "tick": 8,
+    "accept": 16
+  },
+  {
+    "tick": 9,
+    "accept": 16
+  },
+  {
+    "tick": 10,
+    "accept": 16
+  },
+  {
+    "tick": 11,
+    "accept": 16
+  },
+  {
+    "tick": 12,
+    "accept": 16
+  }
+]

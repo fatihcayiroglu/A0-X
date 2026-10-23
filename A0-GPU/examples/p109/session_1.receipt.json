@@ -1,0 +1,94 @@
+{
+  "schema": "A0-P108-TRANSFER-RECEIPT-v1",
+  "epoch": "offline-A",
+  "reset_acknowledged_by_caller_not_verified": true,
+  "state": "CAPTURE_AUDITED_SOFTWARE_ONLY",
+  "reason": null,
+  "planned_bytes": 120,
+  "host_accepted_bytes": 120,
+  "planned_sha256": "304cf2efbd6bba19c0b3b8e55022baadc0c9b39899fa1732a23aa30e48e9409f",
+  "accepted_prefix_sha256": "304cf2efbd6bba19c0b3b8e55022baadc0c9b39899fa1732a23aa30e48e9409f",
+  "events": [
+    {
+      "tick": 1,
+      "packet": 0,
+      "offset": 0,
+      "offered": 18,
+      "accepted": 18,
+      "prefix_sha256": "c67fee9f26e3dfa33e3a5f8ac493f2c171385efa78aa7ef63b54427198d77938"
+    },
+    {
+      "tick": 2,
+      "packet": 0,
+      "offset": 18,
+      "offered": 14,
+      "accepted": 14,
+      "prefix_sha256": "4bddc839c2834dfe382d235eda7a59978884c7b36afd515432668e29faf6d06c"
+    },
+    {
+      "tick": 3,
+      "packet": 1,
+      "offset": 32,
+      "offered": 18,
+      "accepted": 18,
+      "prefix_sha256": "5c8f325930860e1628faff5c7d031d936ec2c12d5d6a79e236b45089ccec953c"
+    },
+    {
+      "tick": 4,
+      "packet": 1,
+      "offset": 50,
+      "offered": 18,
+      "accepted": 18,
+      "prefix_sha256": "f467730e07ee928a81fa5b251ba188567a26c85c2a9ef57207b487df476e26bf"
+    },
+    {
+      "tick": 5,
+      "packet": 1,
+      "offset": 68,
+      "offered": 18,
+      "accepted": 18,
+      "prefix_sha256": "679f1432e9b1f913ed4eee16a3e731fb545fdcab51f12ddefada940e14e4eb00"
+    },
+    {
+      "tick": 6,
+      "packet": 1,
+      "offset": 86,
+      "offered": 2,
+      "accepted": 2,
+      "prefix_sha256": "15c406d1a7d3a478350c82b11a12287c743bc89074dd8ed6ceb62eceeda5fcd4"
+    },
+    {
+      "tick": 7,
+      "packet": 2,
+      "offset": 88,
+      "offered": 18,
+      "accepted": 18,
+      "prefix_sha256": "2ae8769f5c262c779a3a30a36a6b2cac70292eee1ec4c6c929b984b5309e71b3"
+    },
+    {
+      "tick": 8,
+      "packet": 2,
+      "offset": 106,
+      "offered": 14,
+      "accepted": 14,
+      "prefix_sha256": "304cf2efbd6bba19c0b3b8e55022baadc0c9b39899fa1732a23aa30e48e9409f"
+    }
+  ],
+  "can_resume_without_fresh_reset": false,
+  "automatic_replay_permitted": false,
+  "hardware_execution_proven": false,
+  "device_reset_proven": false,
+  "capture_audit": {
+    "status": "PASS",
+    "commands": 3,
+    "frames": 1,
+    "capture_bytes": 80,
+    "command_sha256": "304cf2efbd6bba19c0b3b8e55022baadc0c9b39899fa1732a23aa30e48e9409f",
+    "requires_fresh_reset": true,
+    "lossless_host_capture_required": true,
+    "hardware_execution_proven": false,
+    "transport_state": "CAPTURE_AUDITED_SOFTWARE_ONLY",
+    "device_reset_proven": false
+  },
+  "evidence_kind": "OFFLINE_SCRIPTED_SIMULATION_NOT_HOST_CAPTURE"
+}

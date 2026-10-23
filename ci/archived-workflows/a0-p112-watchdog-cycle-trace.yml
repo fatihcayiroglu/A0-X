@@ -1,0 +1,19 @@
+name: A0-X P112 watchdog cycle trace (manual)
+on:
+  workflow_dispatch:
+jobs:
+  p112-icarus-watchdog-trace:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Icarus Verilog
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y iverilog
+      - name: Check Python oracle integrity and full P112 test coverage
+        run: |
+          python3 -m unittest discover -s A0-GPU/tests -p 'test_p112_watchdog_trace.py' -v
+      - name: Compile and compare 4096 RTL clock cycles to P112 reference
+        run: |
+          python3 A0-GPU/tests/run_p112_watchdog_trace.py

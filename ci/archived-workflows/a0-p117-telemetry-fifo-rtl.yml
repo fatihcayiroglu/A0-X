@@ -1,0 +1,21 @@
+name: A0-X P117 Telemetry FIFO RTL Qualification (manual)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fifo-and-graphics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Icarus simulator
+        run: sudo apt-get update && sudo apt-get install -y iverilog
+      - name: Run P117 real FIFO RTL test
+        run: python3 A0-GPU/tests/run_p117_telemetry_fifo.py
+      - name: Run new P117 two-frame integration test without manual pacing
+        run: python3 A0-GPU/tests/run_p117_host_fifo_e2e.py
+      - name: Run predecessor P116 two-frame integration test
+        run: python3 A0-GPU/tests/run_p116_host_frame_audit_e2e.py
+      - name: Validate P117 Python software reference
+        run: python3 -m unittest discover -s A0-GPU/tests -p 'test_p117_*.py' -q

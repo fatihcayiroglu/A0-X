@@ -1,0 +1,57 @@
+name: A0-X P124 seventeen real RTL gates plus depth-5 loss race
+on:
+  push:
+    paths:
+      - 'A0-GPU/**'
+      - '.github/workflows/a0-p124-17-gate-real-rtl.yml'
+  pull_request:
+    paths:
+      - 'A0-GPU/**'
+      - '.github/workflows/a0-p124-17-gate-real-rtl.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p124-seventeen-real-rtl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual Icarus simulator
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y iverilog
+          command -v iverilog
+          command -v vvp
+          iverilog -V
+      - name: Test the host-side reference oracle and fail-closed controls
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s A0-GPU/tests -p 'test_p124_*.py' -v
+          PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s A0-GPU/tests -p 'test_p123_*.py' -v
+          PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s A0-GPU/tests -p 'test_p122_*.py' -v
+      - name: Qualify all 17 actual Icarus RTL gates without skips
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -B A0-GPU/tools/a0_p124_rtl_qualification.py --evidence EVIDENCE/P124/rtl_qualification
+      - name: Verify chained real evidence (not just tool output)
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.loads(Path('EVIDENCE/P124/rtl_qualification/qualification.json').read_text())
+          assert p['status']=='PASS' and p['qualified'] is True
+          assert p['expected_gates']==17 and p['execution_mode']=='REAL_SUBPROCESS'
+          assert p['p123_evidence_valid'] is True and p['p123_status']=='PASS'
+          assert p['p124_status']=='PASS' and p['sources_unchanged'] is True
+          assert p['physical_gpu_qualified'] is False
+          PY
+      - name: Preserve simulation logs and hashes even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-p124-seventeen-real-rtl-evidence
+          path: EVIDENCE/P124/rtl_qualification/
+          if-no-files-found: warn

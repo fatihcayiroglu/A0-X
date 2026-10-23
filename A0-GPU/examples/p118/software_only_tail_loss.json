@@ -1,0 +1,59 @@
+{
+  "simulation_not_hardware": true,
+  "expected": {
+    "records": 5,
+    "notices": 1,
+    "last_witnessed_drops": 2,
+    "physical_hardware_verified": false
+  },
+  "rows": [
+    {
+      "kind": "frame",
+      "error": false,
+      "sequence": 0,
+      "frame_crc": 100,
+      "good": 0,
+      "bad": 0,
+      "aborted": 0,
+      "dropped": 0
+    },
+    {
+      "kind": "frame",
+      "error": false,
+      "sequence": 1,
+      "frame_crc": 101,
+      "good": 0,
+      "bad": 0,
+      "aborted": 0,
+      "dropped": 0
+    },
+    {
+      "kind": "frame",
+      "error": false,
+      "sequence": 2,
+      "frame_crc": 102,
+      "good": 0,
+      "bad": 0,
+      "aborted": 0,
+      "dropped": 0
+    },
+    {
+      "kind": "frame",
+      "error": false,
+      "sequence": 3,
+      "frame_crc": 103,
+      "good": 0,
+      "bad": 0,
+      "aborted": 0,
+      "dropped": 0
+    },
+    {
+      "kind": "loss_notice",
+      "sequence": 6,
+      "dropped": 2,
+      "good": 0,
+      "bad": 0,
+      "aborted": 0
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+[
+  {
+    "tick": 1,
+    "accept": 5
+  },
+  {
+    "tick": 2,
+    "accept": 0
+  },
+  {
+    "tick": 6,
+    "accept": 0
+  }
+]

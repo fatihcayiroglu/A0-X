@@ -1,0 +1,50 @@
+name: A0-X P123 sixteen real Icarus RTL gates and wire oracle
+on:
+  push:
+    paths:
+      - 'A0-GPU/**'
+      - '.github/workflows/a0-p123-16-gate-real-rtl.yml'
+  pull_request:
+    paths:
+      - 'A0-GPU/**'
+      - '.github/workflows/a0-p123-16-gate-real-rtl.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p123-sixteen-real-rtl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real HDL simulation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y iverilog
+          command -v iverilog && command -v vvp
+          iverilog -V && vvp -V
+      - name: Run P123 and inherited software regression
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s A0-GPU/tests -p 'test_p123_*.py' -v
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s A0-GPU/tests -p 'test_p122_*.py' -v
+      - name: Qualify actual 16/16 RTL gates, no skipping
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 python3 A0-GPU/tools/a0_p123_rtl_qualification.py --evidence EVIDENCE/P123/rtl_qualification
+      - name: Verify independent log evidence and fail closed
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.loads(Path('EVIDENCE/P123/rtl_qualification/qualification.json').read_text())
+          assert p['status']=='PASS' and p['qualified'] is True
+          assert p['expected_gates']==16 and p['execution_mode']=='REAL_SUBPROCESS'
+          assert p['p122_evidence_valid'] is True and p['p123_status']=='PASS'
+          assert p['sources_unchanged'] is True and not p['physical_gpu_qualified']
+          PY
+      - name: Preserve actual RTL raw logs even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-p123-sixteen-real-hdl-simulation-logs
+          path: EVIDENCE/P123/rtl_qualification/
+          if-no-files-found: error

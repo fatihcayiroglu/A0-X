@@ -1,0 +1,11 @@
+{
+  "width": 96,
+  "height": 64,
+  "commands": [
+    {"op": "CLEAR", "tag": 1, "color": "#0D172D"},
+    {"op": "TRIANGLE", "tag": 2, "color": "#33CEAD", "vertices": [[6, 8], [85, 14], [14, 57]]},
+    {"op": "TRIANGLE", "tag": 3, "color": "#EAA43B", "vertices": [[33, 2], [92, 60], [50, 54]]},
+    {"op": "TRIANGLE", "tag": 4, "color": "#BD5AE0", "vertices": [[5, 61], [42, 23], [74, 61]]},
+    {"op": "PRESENT", "tag": 5}
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "accepted_frame_packets": 1,
+  "byte_count": 144,
+  "capture_source_authenticated": false,
+  "epoch_label": "synthetic-reset",
+  "final_attempted": 2,
+  "final_counters_externally_authenticated": false,
+  "final_dropped": 1,
+  "full_image_sequence_proven_from_capture": false,
+  "loss_notices": 1,
+  "packet_count": 7,
+  "physical_hardware_verified": false,
+  "plan_command_sha256": "7f41e854ad1e2031248cb94dc412fd0493530db14943c169aabde6bf5bbc71c6",
+  "planned_frames": 2,
+  "reset_proven": false,
+  "result_error_packets": 0,
+  "result_packets": 5,
+  "schema": "A0-P120-PLAN-BOUND-TELEMETRY-v1",
+  "sent_wire_physically_observed": false,
+  "sha256": "a639c72170c8eb2638abce2608cb1a1068be82cbae2d724dea0aea5e4a3a3823",
+  "status": "PARTIAL_TELEMETRY_ONLY",
+  "unverified_frame_indices": [
+    1
+  ],
+  "verified_command_results": 5,
+  "verified_frame_indices": [
+    0
+  ]
+}

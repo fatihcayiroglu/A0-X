@@ -1,0 +1,34 @@
+name: A0-X P103 real command/frame RTL gate (manual)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  p103-real-rtl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real SystemVerilog simulator
+        run: sudo apt-get update && sudo apt-get install -y iverilog
+      - name: Run actual P103 RTL simulation (fail closed)
+        shell: bash
+        run: |
+          set -o pipefail
+          if [ -f A0-GPU/tests/run_p103_command_pixel.py ]; then
+            ROOT=A0-GPU
+          else
+            ROOT=.
+          fi
+          python3 "$ROOT/tests/run_p103_command_pixel.py" 2>&1 | tee "$RUNNER_TEMP/a0-p103-rtl.log"
+      - name: Save simulation transcript (including failures)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-p103-real-rtl-evidence
+          path: ${{ runner.temp }}/a0-p103-rtl.log
+          if-no-files-found: warn
+          retention-days: 30

@@ -1,0 +1,6 @@
+EVIDENCE/
+__pycache__/
+*.py[cod]
+*.vvp
+*.vcd
+build/

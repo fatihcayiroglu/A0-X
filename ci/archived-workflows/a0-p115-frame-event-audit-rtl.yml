@@ -1,0 +1,17 @@
+name: A0-X P115 Frame Event RTL Qualification (manual)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  frame-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Icarus
+        run: sudo apt-get update && sudo apt-get install -y iverilog
+      - name: Run prospective RTL bench and full top elaboration
+        run: python3 A0-GPU/tests/run_p115_frame_event_audit.py
+      - name: Run P114 real RTL prerequisite gate
+        run: python3 A0-GPU/tests/run_p114_scanout_liveness.py

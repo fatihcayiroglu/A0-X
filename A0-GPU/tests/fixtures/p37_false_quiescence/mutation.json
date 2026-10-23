@@ -1,0 +1,44 @@
+{
+  "schema": "a0-gpu-p37-mutation-fixture-v1",
+  "fixture": "p37_false_quiescence",
+  "qualification": "DEVELOPMENT_ONLY",
+  "canonical_verilator_5_050": "NOT_RUN",
+  "simulation_status": "NOT_RUN",
+  "detection_status": "NOT_RUN",
+  "created_utc": "2026-10-14T07:15:40.8347575Z",
+  "source": "rtl/memory/a0_memory_channel_scheduler.sv",
+  "source_sha256": "4316058ca978fcde318a36d01f4740c87a0d816a47960a70e7a49e1828726d73",
+  "mutant": "a0_memory_channel_scheduler.sv",
+  "mutant_sha256": "4fa351a8d0cdabe819af2ccc6d83bec4c000420c6ae0239f5ea5c9291ea93829",
+  "module_interface_identical": true,
+  "exact_single_replacement": true,
+  "change": {
+    "line": 236,
+    "before": "        quiescent_o = !busy_o;",
+    "after": "        quiescent_o = 1'b1;",
+    "meaning": "Claim quiescence while owned work or raw offers exist",
+    "context_before": [
+      "            end",
+      "        end"
+    ],
+    "context_after": [
+      "        // An unaccepted, held ingress offer is not an old transport copy.",
+      "        // Allow certification with that offer present, but insert an acceptance"
+    ]
+  },
+  "witness_plan": {
+    "testbench": "tests/rtl/a0_memory_channel_scheduler_tb.sv",
+    "variant": 2,
+    "expected_semantic_assertion_candidates": [
+      "P37 public busy/quiescence accounting mismatch"
+    ],
+    "requirements": [
+      "Compile and elaborate without errors",
+      "Retain raw simulator failure",
+      "Require the expected semantic assertion; timeout or build failure does not establish detection",
+      "Keep failed run record separate from any mutation-detected receipt"
+    ]
+  },
+  "revision": "2026-10-17-synchronous-reset-alignment",
+  "revision_reason": "Regenerated unchanged single-mutation recipe after aligning scheduler state reset to synchronous active-low P36 reset contract; fresh behavioral evidence required."
+}

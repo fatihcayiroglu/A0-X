@@ -1,0 +1,40 @@
+name: A0-X P100 manual development verification
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+jobs:
+  python-software-reference:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: A0-GPU
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: All software reference tests (NOT RTL)
+        run: python -m unittest discover -s tests -p 'test_*.py' -q
+      - name: Deterministic software-only demo
+        run: python tools/a0_p100_integrated_demo.py --output ../p100-results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p100-software-reference
+          path: p100-results/
+
+  rtl-candidate-probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: A0-GPU
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Icarus Verilog on runner
+        run: sudo apt-get update && sudo apt-get install -y iverilog
+      - name: P100 candidate RTL smoke test — real HDL (not full qualification)
+        run: bash tests/rtl/run_p100_candidate_gate.sh

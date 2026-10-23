@@ -25,7 +25,7 @@ def _label(v: str, field: str) -> str:
 class ResetBoundaryReceiver:
     """Keep byte-stream epochs isolated across acknowledged external resets.
 
-    reset_boundary must only be called AFTER the transport has actually
+    `reset_boundary` must only be called AFTER the transport has actually
     observed asserted device reset and TX quiescence. The report explicitly
     does NOT validate the caller's assertion. This is an integration guard,
     not a secure attestation or FPGA/RTL qualification.
@@ -55,7 +55,7 @@ class ResetBoundaryReceiver:
                        transmitter_quiesced: bool) -> dict:
         """Discard only the previous epoch's unfinished tail, then restart.
 
-        evidence_id is an audit reference; caller-authored evidence is NOT
+        `evidence_id` is an audit reference; caller-authored evidence is NOT
         independently checked, so the report must never claim reset_proven.
         """
         if self._closed or self._poisoned:

@@ -1,0 +1,42 @@
+name: A0-X P111 diagnostic RTL gate (manual)
+'on':
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnostics:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real RTL simulator
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y iverilog python3-pytest
+      - name: Source checks are NOT simulation
+        run: |
+          set -euo pipefail
+          mkdir -p qualification-logs
+          python3 A0-GPU/tools/a0_p110_rtl_wiring_preflight.py | tee qualification-logs/p110-preflight.log
+          python3 A0-GPU/tools/a0_p111_rtl_diagnostic_preflight.py | tee qualification-logs/p111-preflight.log
+          python3 -m pytest -q A0-GPU/tests/test_p111_completion_watchdog.py A0-GPU/tests/test_p111_rtl_diagnostic_preflight.py | tee qualification-logs/p111-python.log
+      - name: Mandatory real compiled RTL diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 A0-GPU/tests/run_p111_diagnostics_rtl.py 2>&1 | tee qualification-logs/p111-rtl.log
+      - name: Existing graphics RTL qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 A0-GPU/tests/run_p103_command_pixel.py 2>&1 | tee qualification-logs/p103-rtl.log
+          python3 A0-GPU/tests/run_p104_dual_bank.py 2>&1 | tee qualification-logs/p104-rtl.log
+          python3 A0-GPU/tests/run_p105_host_dual_bank.py 2>&1 | tee qualification-logs/p105-rtl.log
+          python3 A0-GPU/tests/run_p106_extended_host.py 2>&1 | tee qualification-logs/p106-rtl.log
+      - name: Publish logs even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p111-real-rtl-qualification
+          path: qualification-logs/
+          if-no-files-found: warn

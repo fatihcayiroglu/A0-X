@@ -1,0 +1,47 @@
+name: A0-X P51 manual RTL qualification (development only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-hdl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [iverilog, verilator]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install selected real HDL simulator
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.backend }}
+      - name: Locate source root
+        shell: bash
+        run: |
+          if [ -f A0-GPU/tools/p51_rtl_qualification.py ]; then
+            echo 'A0_DIR=A0-GPU' >> "$GITHUB_ENV"
+          else
+            test -f tools/p51_rtl_qualification.py
+            echo 'A0_DIR=.' >> "$GITHUB_ENV"
+          fi
+      - name: Run software regressions
+        run: python3 -m unittest discover -s "$A0_DIR/tests" -p 'test_*.py' -q
+      - name: Run ACTUAL P45-P50 RTL plus both failing RTL mutants
+        run: |
+          python3 "$A0_DIR/tools/p51_rtl_qualification.py" \
+            --output "$RUNNER_TEMP/a0-p51-${{ matrix.backend }}" \
+            --require-backend '${{ matrix.backend }}' \
+            --seed 50050 --cycles 6000
+      - name: Save raw verification evidence (PASS or FAIL)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-p51-${{ matrix.backend }}-evidence
+          path: ${{ runner.temp }}/a0-p51-${{ matrix.backend }}/
+          if-no-files-found: warn
+          retention-days: 30

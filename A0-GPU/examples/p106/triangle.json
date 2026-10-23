@@ -1,0 +1,11 @@
+{
+  "tag": 2,
+  "color": 16711680,
+  "vertices": [0, 0, 4, 0, 0, 4],
+  "depth": 10,
+  "depth_op": 1,
+  "depth_write": true,
+  "blend": true,
+  "alpha": 128,
+  "scissor": [1, 1, 2, 2]
+}

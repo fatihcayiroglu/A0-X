@@ -1,0 +1,19 @@
+name: A0-X P113 progress-aware PRESENT watchdog RTL (manual)
+on:
+  workflow_dispatch:
+jobs:
+  p113-rtl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Icarus Verilog
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y iverilog
+      - name: Run P113 Python behavioral tests
+        run: python3 -m unittest discover -s A0-GPU/tests -p 'test_p113_progress_watchdog.py' -v
+      - name: Real RTL simulation and top-level elaboration
+        run: python3 A0-GPU/tests/run_p113_progress_watchdog.py
+      - name: P112 cycle trace regression
+        run: python3 A0-GPU/tests/run_p112_watchdog_trace.py

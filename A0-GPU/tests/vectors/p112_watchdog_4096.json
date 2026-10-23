@@ -1,0 +1,40 @@
+{
+  "columns": [
+    "rst_n",
+    "cmd_valid",
+    "cmd_ready",
+    "cmd_tag",
+    "completion_valid",
+    "completion_ready",
+    "completion_tag",
+    "completion_error",
+    "fault_sticky",
+    "pending",
+    "active_tag",
+    "last_fault_tag",
+    "timeout_count",
+    "tag_mismatch_count",
+    "protocol_fault_count",
+    "completed_count"
+  ],
+  "coverage": {
+    "command_accepts": 557,
+    "completed_transactions": 99,
+    "cycles": 4096,
+    "fault_entries": 384,
+    "fault_resets": 384,
+    "pending_cycles": 1499,
+    "protocol_faults": 296,
+    "reset_cycles": 908,
+    "stalled_response_cycles": 833,
+    "successful_response_cycles": 99,
+    "tag_mismatch_faults": 45,
+    "timeout_faults": 43
+  },
+  "cycles": 4096,
+  "evidence_class": "PYTHON_ORACLE_NOT_HDL_SIMULATION",
+  "format": "P112_P111_PIN_TRACE_V1",
+  "max_wait_cycles": 7,
+  "seed": 112,
+  "sha256": "d1c9acb5c568ee89ad3fd6b64dda7ae46230adc59e5c883ad258d1e157eb8cf5"
+}

@@ -1,0 +1,17 @@
+name: A0 P106 host fragment RTL (manual)
+on:
+  workflow_dispatch:
+jobs:
+  qualify-p106-rtl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install HDL simulator
+        run: sudo apt-get update && sudo apt-get install -y iverilog
+      - name: Run P106 RTL gate (no skipped simulation)
+        working-directory: A0-GPU
+        run: python3 tests/run_p106_extended_host.py
+      - name: Full software regression
+        working-directory: A0-GPU
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -q

@@ -1,0 +1,22 @@
+name: A0-X P104 double-bank RTL (manual)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p104-real-rtl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Icarus Verilog
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y iverilog
+          iverilog -V | head -n 2
+      - name: Real P104 RTL gate; fail closed
+        working-directory: A0-GPU
+        run: python3 tests/run_p104_dual_bank.py
+      - name: Software regression (separate evidence)
+        working-directory: A0-GPU
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -q
