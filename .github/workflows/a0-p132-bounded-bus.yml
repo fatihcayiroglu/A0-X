@@ -1,0 +1,73 @@
+name: A0-X P132 bounded P102 bus real RTL and ECP5 fit
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/**'
+      - '.github/workflows/a0-p132-bounded-bus.yml'
+  push:
+    paths:
+      - 'A0-GPU/rtl/graphics/**'
+      - '.github/workflows/a0-p132-bounded-bus.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p132-bus-rtl-and-route:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real RTL and FPGA tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y iverilog yosys nextpnr-ecp5
+          iverilog -V | head -n 2
+          yosys -V
+          nextpnr-ecp5 --version
+      - name: Compile and execute P132 real P102 RTL testbench
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P132
+          iverilog -g2012 -s a0_p132_command_bus_tb -o EVIDENCE/P132/p132.vvp             A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv             A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv             A0-GPU/rtl/graphics/a0_p68_depth_compare.sv             A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv             A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv             A0-GPU/rtl/graphics/a0_p132_command_bus.sv             A0-GPU/rtl/graphics/tb/a0_p132_command_bus_tb.sv             2>&1 | tee EVIDENCE/P132/compile.log
+          vvp EVIDENCE/P132/p132.vvp | tee EVIDENCE/P132/rtl.log
+          grep -qx 'P132_REAL_RTL_PASS bounded bus reset/invalid/backpressure/clear/draw' EVIDENCE/P132/rtl.log
+      - name: Device synthesize and route bounded top on real ECP5-85K
+        run: |
+          set -euo pipefail
+          yosys -p "read_verilog -sv A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv A0-GPU/rtl/graphics/a0_p132_command_bus.sv; hierarchy -check -top a0_p132_command_bus -chparam FRAME_WIDTH 4 -chparam FRAME_HEIGHT 4; synth_ecp5 -top a0_p132_command_bus -json EVIDENCE/P132/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P132/yosys.log
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 --json EVIDENCE/P132/netlist.json --textcfg EVIDENCE/P132/route.config --report EVIDENCE/P132/route.json --freq 1 --lpf-allow-unconstrained --seed 1 2>&1 | tee EVIDENCE/P132/nextpnr.log
+      - name: Fail closed on physical mapping, IO count or timing
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("EVIDENCE/P132")
+          n = json.loads((p/"netlist.json").read_text())
+          top = n["modules"]["a0_p132_command_bus"]
+          io = sum(len(v["bits"]) for v in top["ports"].values())
+          assert 0 < io <= 96, f"bounded IO count violated: {io}"
+          assert top["cells"], "empty design"
+          assert not any(v["type"].startswith("$") or v["type"].startswith("a0_") or
+                         "LATCH" in v["type"].upper() for v in top["cells"].values()), "unmapped cell/latch"
+          r = json.loads((p/"route.json").read_text())
+          util = r["utilization"]
+          for kind in ("TRELLIS_COMB", "TRELLIS_IO"):
+              assert 0 < util[kind]["used"] <= util[kind]["available"], f"invalid {kind} allocation"
+          fmax = r["fmax"]
+          assert fmax and all(v["achieved"] >= v["constraint"] >= 1.0
+                              for v in fmax.values()), "internal timing failed"
+          evidence = dict(status="PASS", scope="simulated RTL plus routed FPGA model",
+                          io_bits=io, real_rtl=True, routed=True,
+                          internal_timing_met=True, physical_board_qualified=False,
+                          external_io_timing_qualified=False)
+          (p/"qualification.json").write_text(json.dumps(evidence,indent=2))
+          print(evidence)
+          PY
+      - name: Upload evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-p132-bounded-command-bus-evidence
+          path: EVIDENCE/P132/
+          if-no-files-found: warn
