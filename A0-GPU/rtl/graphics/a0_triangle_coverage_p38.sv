@@ -116,11 +116,11 @@ module a0_triangle_coverage_p38 #(
                     end
                 end
             end else if (!pixel_valid || pixel_ready) begin
-                if ((int'(scan_x) == FRAME_WIDTH - 1) &&
-                    (int'(scan_y) == FRAME_HEIGHT - 1)) begin
+                if ((scan_x == FRAME_WIDTH - 1) &&
+                    (scan_y == FRAME_HEIGHT - 1)) begin
                     active <= 1'b0;
                     done <= 1'b1;
-                end else if (int'(scan_x) == FRAME_WIDTH - 1) begin
+                end else if (scan_x == FRAME_WIDTH - 1) begin
                     scan_x <= '0;
                     scan_y <= scan_y + 16'd1;
                 end else begin
