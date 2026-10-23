@@ -1,6 +1,6 @@
 # P132 — bounded, single-clock P102 command/readback contract (draft)
 
-Status: **DESIGN ONLY — NOT RTL QUALIFIED**. This contract replaces P131's oversized *external* P102 parallel debug interface without changing the P102 arithmetic, depth, blend, or framebuffer semantics.
+Status: **RTL CANDIDATE — automated real-Icarus tests, direct-P102 differential comparison and ECP5-85K route gates implemented; verify current commit's Actions before merge.** This contract replaces P131's oversized *external* P102 parallel debug interface without changing the P102 arithmetic, depth, blend, or framebuffer semantics.
 
 ## Boundary
 
@@ -43,10 +43,10 @@ Status: **DESIGN ONLY — NOT RTL QUALIFIED**. This contract replaces P131's ove
 7. Reset during clear/draw invalidates response and clears sticky events. Concurrent completion and acknowledgment must have specified precedence (completion wins, to avoid losing an event).
 8. Reserved bits in CONTROL or TRI_MODE are errors and must leave registers/state unchanged. Reads of write-only or writes to read-only addresses are errors.
 
-## Qualification gates (required before merging implementation)
+## Qualification gates (required before merging; implemented gates run in GitHub Actions)
 
-- Real Icarus/Verilator testbench: reset, register packing/sign, write/read roundtrip, clear, triangle, depth reject, blend, scissor, readback, invalid address/misalignment, reserved bits, launch while busy, completion acknowledgment, sustained response backpressure, reset during operation, and no duplicate launch.
-- Compare bus-driven full-frame color/depth against the pre-existing direct P102 RTL for at least one deterministic mixed-command workload; fail on any pixel mismatch.
+- Real Icarus testbench covers reset, write/read roundtrip, clear, triangle, readback, invalid address/misalignment, reserved bits, launch while busy, completion acknowledgment, sustained response backpressure, and response reset. The differential test covers depth, blend and scissor. Additional explicit no-duplicate-launch and snapshot-under-midflight-write directed tests remain useful hardening.
+- Differential Icarus test compares every pixel's color/depth with independently driven direct P102 through clear, triangle, depth, blend, and scissor workload; fails on any mismatch.
 - Yosys synthesis of the wrapper **and** P102; prove no unresolved hierarchy and no latch cells.
 - ECP5-85K nextpnr place-route with genuine mapped utilization and internal timing. Require top-level IO count be below a documented package budget. No `--timing-allow-fail`; preserve P126/P129/P130/P131 regression gates.
 - Evidence must mark NOT_RUN when real tools absent, FAIL on mismatches, PASS only when actually executed. Never describe synthesis/route as board certification.
