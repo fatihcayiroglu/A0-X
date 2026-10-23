@@ -12,6 +12,15 @@ module a0_p133_dual_clock_bridge_tb;
   integer i;
   reg [31:0] result;
   reg completed;
+  reg saw_request_full=0, saw_response_full=0;
+  always @(posedge host_clk) begin
+    if(rst_n && dut.hrst_n && dut.request_fifo.wfull)
+      saw_request_full <= 1;
+  end
+  always @(posedge gpu_clk) begin
+    if(rst_n && dut.grst_n && dut.response_fifo.wfull)
+      saw_response_full <= 1;
+  end
 
   a0_p133_dual_clock_bridge #(.FRAME_WIDTH(4),.FRAME_HEIGHT(4)) dut(
     .host_clk(host_clk),.gpu_clk(gpu_clk),.rst_n(rst_n),
@@ -76,6 +85,33 @@ module a0_p133_dual_clock_bridge_tb;
     end
   endtask
 
+  // Deliberately stop the host response consumer long enough to fill the
+  // response FIFO, block P132, and eventually fill the request FIFO too.
+  // Every read response has a unique expected index; zeros are write acks.
+  task automatic overflowing_producer;
+    integer k;
+    begin
+      for(k=0;k<24;k=k+1) begin
+        post(1,8'h0c,32'h00010000+k);
+        post(0,8'h0c,0);
+      end
+    end
+  endtask
+  task automatic delayed_collector;
+    integer k;
+    reg [31:0] value;
+    begin
+      repeat(250) @(negedge host_clk);
+      for(k=0;k<24;k=k+1) begin
+        collect(0,value);
+        if(value !== 0) $fatal(1,"P133 burst write acknowledgement mismatch %h",value);
+        collect(0,value);
+        if(value !== (32'h00010000+k))
+          $fatal(1,"P133 burst read duplicate/reorder/loss at %0d got %h",k,value);
+      end
+    end
+  endtask
+
   initial begin
     repeat(5) @(negedge gpu_clk);
     rst_n=1;
@@ -109,6 +145,14 @@ module a0_p133_dual_clock_bridge_tb;
     if(result !== 32'h80123456) $fatal(1,"P133 color readback wrong %h",result);
     access(0,8'h3c,0,0,result);
     if(result !== 32'h80ffffff) $fatal(1,"P133 depth readback wrong %h",result);
+
+    fork
+      overflowing_producer();
+      delayed_collector();
+    join
+    if(!saw_request_full || !saw_response_full)
+      $fatal(1,"P133 did not verify both FIFO full backpressure paths req=%b rsp=%b",
+             saw_request_full,saw_response_full);
 
     // Explicit shared reset must invalidate a queued, backpressured response.
     post(0,8'h00,0);
