@@ -3,10 +3,13 @@ on:
   pull_request:
     paths:
       - 'A0-GPU/rtl/graphics/**'
+      - 'A0-GPU/docs/P132-BOUNDED-COMMAND-BUS-CONTRACT.md'
       - '.github/workflows/a0-p132-bounded-bus.yml'
   push:
+    branches: [main]
     paths:
       - 'A0-GPU/rtl/graphics/**'
+      - 'A0-GPU/docs/P132-BOUNDED-COMMAND-BUS-CONTRACT.md'
       - '.github/workflows/a0-p132-bounded-bus.yml'
   workflow_dispatch:
 permissions:
