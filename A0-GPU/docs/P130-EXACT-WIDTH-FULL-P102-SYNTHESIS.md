@@ -3,7 +3,7 @@
 Scope: narrow P38 raster edge products from padded signed-64 multiplies to
 provably sufficient fixed widths. P129's raster-to-framebuffer regression stays
 mandatory. The CI P130 gate also compiles the complete P102 (4×4) graphics
-chain with Yosys into a generic technology-independent netlist, using genuine
+chain with Yosys into a **flattened** generic technology-independent netlist, using genuine
 Icarus and Yosys binaries.
 
 ## Integer arithmetic proof
@@ -22,9 +22,10 @@ Icarus and Yosys binaries.
 
 * 196 deterministic corner-directed triangle cases against the original P38,
   cycle-by-cycle pixel/ready/done differential comparison in real Icarus.
-* 12 strict Python tests, including 20,000 deterministic signed-range samples.
-* Yosys generic synthesis of the full P102 graphics chain and nonempty,
-  latch-free generic cell netlist. Both commands must exit zero.
+* 13 strict Python tests, including 20,000 deterministic signed-range samples.
+* Yosys generic synthesis of the full P102 graphics chain; all instances
+  must flatten into primitive generic cells with no unresolved submodules and
+  no latches. Both commands must exit zero.
 * P126 and P129 real RTL regression remain separate required CI checks.
 
 ## Explicitly not claimed
