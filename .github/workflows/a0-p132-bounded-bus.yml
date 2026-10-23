@@ -25,12 +25,12 @@ jobs:
           set -euo pipefail
           # Prefer the hosted runner's existing package indexes. Bound all
           # package manager hangs; retry once with refreshed indexes if needed.
-          if ! timeout 180s sudo apt-get install -y -o Acquire::Retries=2 \
+          if ! timeout 900s sudo apt-get install -y -o Acquire::Retries=2 \
               -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 \
               iverilog yosys nextpnr-ecp5; then
-            timeout 180s sudo apt-get update -o Acquire::Retries=2 \
+            timeout 300s sudo apt-get update -o Acquire::Retries=2 \
               -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20
-            timeout 180s sudo apt-get install -y -o Acquire::Retries=2 \
+            timeout 900s sudo apt-get install -y -o Acquire::Retries=2 \
               -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 \
               iverilog yosys nextpnr-ecp5
           fi
