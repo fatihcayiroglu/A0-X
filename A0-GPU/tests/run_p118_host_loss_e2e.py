@@ -25,6 +25,9 @@ def run():
             s=subprocess.run(['vvp',str(exe)],capture_output=True,text=True,timeout=180)
             print('SIM_EXIT',s.returncode,s.stdout,s.stderr,flush=True)
             if s.returncode or s.stdout.count(MARKER)!=1 or 'FATAL:' in s.stdout+s.stderr:return 1
+            # Emit the exact gate witness only after real compile+simulation
+            # and a single observed TB completion marker.
+            print(MARKER,flush=True)
             print('P118_REAL_RTL_HOST_E2E_QUALIFIED_PASS',flush=True)
             return 0
         except (OSError,subprocess.TimeoutExpired) as exc:
