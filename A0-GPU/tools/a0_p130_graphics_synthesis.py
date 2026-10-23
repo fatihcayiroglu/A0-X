@@ -41,11 +41,15 @@ def summarize_netlist(data: dict, top: str = 'a0_triangle_scissor_depth_blend_p1
     for cell in cells.values():
         typ=cell.get('type','')
         if not isinstance(typ,str) or not typ: raise ValueError('bad cell type')
-        if 'latch' in typ.lower() or typ.startswith('$mem'): raise ValueError('unmapped latch or memory cell')
+        if 'latch' in typ.lower() or typ.startswith('$mem'):
+            raise ValueError('unmapped latch or memory cell')
+        if not typ.startswith('$_'):
+            raise ValueError(f'unflattened / non-generic cell: {typ}')
         kinds[typ]=kinds.get(typ,0)+1
     if not entry.get('ports'): raise ValueError('missing I/O ports')
     return {'generic_cell_count': len(cells), 'generic_cell_types': kinds,
-            'device_mapped': False,'physical_gpu_qualified': False}
+            'netlist_flattened': True, 'device_mapped': False,
+            'physical_gpu_qualified': False}
 
 
 def validate_witness(stdout: str) -> dict:
@@ -66,7 +70,7 @@ def command_synth(netlist: Path) -> str:
     return '; '.join([
         f'read_verilog -sv {files}',
         'hierarchy -check -top a0_triangle_scissor_depth_blend_p102 -chparam FRAME_WIDTH 4 -chparam FRAME_HEIGHT 4',
-        'synth -top a0_triangle_scissor_depth_blend_p102',
+        'synth -flatten -top a0_triangle_scissor_depth_blend_p102',
         'check -assert',
         f'write_json {netlist}',
     ])
