@@ -79,7 +79,7 @@ module a0_p130_p38_width_equivalence_tb;
     end
     if (triangles!==196 || checks<13000 || done_events<150)
       $fatal(1,"P130 coverage missing: triangles=%0d checks=%0d done=%0d",triangles,checks,done_events);
-    $display("P130_P38_EQUIV_CYCLES=%0d", checks);
+    $display("P130_P38_CYCLES=%0d", checks);
     $display("P130_P38_TRIANGLES=%0d", triangles);
     $display("P130_P38_PIXEL_EVENTS=%0d", pixel_events);
     $display("P130_P38_DONE_EVENTS=%0d", done_events);
