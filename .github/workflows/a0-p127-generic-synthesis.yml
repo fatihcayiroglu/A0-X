@@ -1,0 +1,57 @@
+name: A0-X P127 real Yosys generic synthesis (not FPGA PnR)
+on:
+  push:
+    paths:
+      - 'A0-GPU/rtl/**'
+      - 'A0-GPU/tools/a0_p127_synthesis.py'
+      - 'A0-GPU/tests/test_p127_synthesis.py'
+      - '.github/workflows/a0-p127-generic-synthesis.yml'
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/**'
+      - 'A0-GPU/tools/a0_p127_synthesis.py'
+      - 'A0-GPU/tests/test_p127_synthesis.py'
+      - '.github/workflows/a0-p127-generic-synthesis.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p127-real-yosys-synthesis:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Yosys and simulation toolchain
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y yosys iverilog
+          yosys -V
+          iverilog -V | head -n 1
+      - name: Test strict synthesis evidence parser
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s A0-GPU/tests -p 'test_p127_synthesis.py' -v
+      - name: Synthesize selected real A0-X RTL sources with Yosys
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -B A0-GPU/tools/a0_p127_synthesis.py --evidence EVIDENCE/P127/synthesis
+      - name: Require every target PASS and reject physical readiness assertions
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          j=json.loads(Path('EVIDENCE/P127/synthesis/p127_synthesis.json').read_text())
+          assert j['status']=='PASS' and j['tool_found']
+          assert j['targets_total']==4 and j['targets_passed']==4
+          assert all(t['status']=='PASS' and t['cell_count']>0 and t['latch_count']==0 for t in j['targets'])
+          assert j['fmax_measured'] is False and j['timing_closed'] is False
+          assert j['fpga_mapped'] is False and j['physical_gpu_qualified'] is False
+          PY
+      - name: Upload PASS/FAIL/NOT_RUN synthesis evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-p127-yosys-generic-synthesis-evidence
+          path: EVIDENCE/P127/synthesis/
+          if-no-files-found: warn

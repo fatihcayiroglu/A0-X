@@ -29,7 +29,7 @@ module a0_scanout_telemetry_loss_fifo_p118 #(
     logic finish_packet,free_slot,push_frame,push_notice,push_any,overflow_event;
     logic notice_owed_q;
     function automatic logic [PTR_BITS-1:0] step_ptr(input logic [PTR_BITS-1:0] p);
-        return p==PTR_BITS'(FIFO_DEPTH-1) ? '0 : p+PTR_BITS'(1);
+        step_ptr = p==PTR_BITS'(FIFO_DEPTH-1) ? '0 : p+PTR_BITS'(1);
     endfunction
     function automatic logic [31:0] crc32_28(input logic [223:0] data);
         logic [31:0] crc;
@@ -39,7 +39,7 @@ module a0_scanout_telemetry_loss_fifo_p118 #(
             for(int j=0;j<8;j++)
                 crc=crc[0] ? ((crc>>1)^32'hedb88320) : (crc>>1);
         end
-        return ~crc;
+        crc32_28 = ~crc;
     endfunction
     // P117 A0GF wire unchanged: A0GF, version, error, seq, crc, counters.
     assign frame_payload={dropped_frame_events,aborted_frame_count,
