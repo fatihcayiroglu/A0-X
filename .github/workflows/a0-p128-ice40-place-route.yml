@@ -1,0 +1,67 @@
+name: A0-X P128 real iCE40HX8K place-route internal timing (not hardware)
+on:
+  push:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p68_depth_compare.sv'
+      - 'A0-GPU/rtl/graphics/a0_scanout_telemetry_fifo_p117.sv'
+      - 'A0-GPU/rtl/graphics/a0_scanout_telemetry_loss_fifo_p118.sv'
+      - 'A0-GPU/tools/a0_p128_ice40_pnr.py'
+      - 'A0-GPU/tests/test_p128_ice40_pnr.py'
+      - '.github/workflows/a0-p128-ice40-place-route.yml'
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p68_depth_compare.sv'
+      - 'A0-GPU/rtl/graphics/a0_scanout_telemetry_fifo_p117.sv'
+      - 'A0-GPU/rtl/graphics/a0_scanout_telemetry_loss_fifo_p118.sv'
+      - 'A0-GPU/tools/a0_p128_ice40_pnr.py'
+      - 'A0-GPU/tests/test_p128_ice40_pnr.py'
+      - '.github/workflows/a0-p128-ice40-place-route.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p128-ice40-placed-routed:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FPGA fabric-specific toolchain
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y yosys nextpnr-ice40 fpga-icestorm
+          yosys -V
+          nextpnr-ice40 --version
+      - name: Test P128 strict evidence checks
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s A0-GPU/tests -p 'test_p128_ice40_pnr.py' -v
+      - name: Run real HX8K-CT256 FPGA place and route and 5 MHz internal timing
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -B A0-GPU/tools/a0_p128_ice40_pnr.py --evidence EVIDENCE/P128/ice40
+      - name: Assert strict results without pretending hardware was tested
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('EVIDENCE/P128/ice40/p128_ice40_pnr.json').read_text())
+          assert r['part']=='iCE40HX8K-CT256' and r['status']=='PASS'
+          assert r['targets_total']==4 and r['targets_passed']==4
+          assert all(e['status']=='PASS' and e['resources']['ICESTORM_LC']['used']>0 for e in r['targets'])
+          assert sum(bool(e['clocks']) for e in r['targets'])==3
+          assert all(e['internal_clock_timing_met'] for e in r['targets'] if e['clocked'])
+          assert r['unconstrained_physical_pins'] is True
+          assert r['io_path_timing_constrained'] is False
+          assert r['physical_board_tested'] is False
+          assert r['device_bitstream_programmed'] is False
+          assert r['hardware_fmax_measured'] is False
+          assert r['gpu_hardware_qualified'] is False
+          PY
+      - name: Upload PASS or FAIL evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-p128-hx8k-pnr-internal-timing-evidence
+          path: EVIDENCE/P128/ice40/
+          if-no-files-found: warn
