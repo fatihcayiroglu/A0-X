@@ -1,0 +1,49 @@
+name: A0-X host packet oracle smoke (software only)
+on:
+  push:
+    paths:
+      - 'A0-GPU/tools/a0_p122_packet_oracle.py'
+      - '.github/workflows/a0-host-oracle-smoke.yml'
+  pull_request:
+    paths:
+      - 'A0-GPU/tools/a0_p122_packet_oracle.py'
+      - '.github/workflows/a0-host-oracle-smoke.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  software-only-packet-oracle:
+    name: CRC32 packet reference checks (NOT RTL)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify software packet encoder and CRC32 rejection
+        run: |
+          python3 - <<'PY'
+          import sys
+          import zlib
+          sys.path.insert(0, "A0-GPU/tools")
+          from a0_p122_packet_oracle import frame, loss_notice, decode
+          pkt = frame(sequence=11, frame_crc=0x10203040, good=8, bad=1, aborted=2)
+          assert len(pkt) == 32
+          assert int.from_bytes(pkt[-4:], "little") == zlib.crc32(pkt[:28])
+          parsed = decode(pkt)
+          assert parsed["type"] == "frame"
+          assert parsed["sequence"] == 11
+          assert parsed["frame_crc"] == 0x10203040
+          loss = loss_notice(sequence=12, dropped=3, good=8, bad=1, aborted=2)
+          assert len(loss) == 32 and decode(loss)["type"] == "loss"
+          assert decode(loss)["dropped"] == 3
+          damaged = bytearray(pkt)
+          damaged[7] ^= 1
+          try:
+              decode(bytes(damaged))
+          except ValueError as exc:
+              assert "CRC32" in str(exc)
+          else:
+              raise AssertionError("Corrupt packet accepted")
+          print("HOST_PACKET_ORACLE_SOFTWARE_ONLY_PASS")
+          print("REAL_RTL_TESTS=NOT_RUN")
+          print("PHYSICAL_GPU_QUALIFIED=false")
+          PY
