@@ -4,7 +4,7 @@
 // -> P114 liveness -> P118 buffered telemetry -> P48/P49 host packets.
 // Independent known-good CRCs were computed with Python zlib (IEEE CRC32);
 // they are constants, not derived from the DUT's frame CRC output.
-module a0_host_telemetry_fifo_e2e_p118_tb;
+module a0_host_telemetry_loss_e2e_p118_tb;
     logic clk=0; always #5 clk=~clk;
     logic rst_n=0,rx_valid=0,rx_ready;
     logic [7:0] rx_byte=0,tx_byte;

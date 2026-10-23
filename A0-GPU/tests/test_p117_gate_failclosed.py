@@ -107,8 +107,15 @@ class P117IntegrationTests(TestCase):
 
     def test_p117_ci_is_manual_only(self):
         root=RUNNER.parents[2]
-        f=root/'.github/workflows/a0-p117-telemetry-fifo-rtl.yml'
-        x=f.read_text()
+        # Historical manual-only workflow is archived, not an active CI gate.
+        archived=root/'ci/archived-workflows/a0-p117-telemetry-fifo-rtl.yml'
+        x=archived.read_text()
         self.assertIn('workflow_dispatch:',x)
         self.assertNotIn('push:',x)
         self.assertIn('run_p117_host_fifo_e2e.py',x)
+        # Current P126 root workflow MUST be active and require real RTL.
+        active=root/'.github/workflows/a0-p126-reset-boundary-18-real-rtl.yml'
+        y=active.read_text()
+        self.assertIn('push:',y)
+        self.assertIn('a0_p126_qualification.py',y)
+        self.assertIn('real_rtl_gates_verified',y)

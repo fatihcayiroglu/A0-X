@@ -32,8 +32,8 @@ module a0_telemetry_fifo_p117_tb;
        frame_valid=0;
     endtask
     task automatic drain(input int bytes_to_send);
-       int before;
-       before=sent_count;
+       int initial_sent_count;
+       initial_sent_count=sent_count;
        @(negedge clk);
        tx_ready=1;
        for(int i=0;i<bytes_to_send;i++) begin
@@ -41,8 +41,8 @@ module a0_telemetry_fifo_p117_tb;
           @(negedge clk);
        end
        tx_ready=0;
-       if(sent_count-before!=bytes_to_send)
-          $fatal(1,"P117 drain count mismatch %0d vs %0d",sent_count-before,bytes_to_send);
+       if(sent_count-initial_sent_count!=bytes_to_send)
+          $fatal(1,"P117 drain count mismatch %0d vs %0d",sent_count-initial_sent_count,bytes_to_send);
     endtask
     function automatic logic[31:0] crc_packet(input int base);
        logic[31:0] crc;

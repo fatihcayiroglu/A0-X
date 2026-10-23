@@ -78,6 +78,7 @@ module a0_p123_depth3_reset_stream_tb;
         if(nbytes!==263 || !tx_valid || queued_frame_events!==1)
             $fatal(1,"P123 partial packet did not remain queued");
         @(negedge clk);rst_n=0;
+        #1; // Let combinational async output gating settle before sampling.
         if(tx_valid!==0) $fatal(1,"P123 reset must gate TX immediately");
         @(negedge clk);
         if(queued_frame_events!==0 || dropped_frame_events!==0 || loss_notice_pending || tx_valid)

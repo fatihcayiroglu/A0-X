@@ -82,6 +82,7 @@ module a0_p125_depth7_ring_reset_tb;
         if(nbytes!==297 || !tx_valid || queued_frame_events!==3'd1)
             $fatal(1,"P125 partial packet did not remain pending");
         @(negedge clk);rst_n=0;
+        #1; // Gate must fall before the next active clock, after delta settling.
         if(tx_valid!==1'b0) $fatal(1,"P125 reset must gate TX immediately");
         @(negedge clk);
         if(queued_frame_events!==0 || dropped_frame_events!==0 ||

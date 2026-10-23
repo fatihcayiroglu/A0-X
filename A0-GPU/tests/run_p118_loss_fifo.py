@@ -20,6 +20,9 @@ def run():
             s=subprocess.run(['vvp',str(exe)],capture_output=True,text=True,timeout=120)
             print('SIM_EXIT',s.returncode,s.stdout,s.stderr,flush=True)
             if s.returncode or s.stdout.count(MARKER)!=1 or 'FATAL:' in s.stdout+s.stderr:return 1
+            # Emit the *exact* TB witness only after a real successful compile,
+            # simulation exit=0, and one independently observed simulator marker.
+            print(MARKER,flush=True)
             print('P118_REAL_RTL_LOSS_NOTICE_QUALIFIED_PASS',flush=True)
             return 0
         except (OSError,subprocess.TimeoutExpired) as exc:

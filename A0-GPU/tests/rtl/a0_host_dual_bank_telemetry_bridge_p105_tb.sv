@@ -71,7 +71,7 @@ module a0_host_dual_bank_telemetry_bridge_p105_tb;
     end
 
     initial begin #1000000; $fatal(1,"P105 global watchdog"); end
-    initial begin : sequence
+    initial begin : test_sequence
         int i,offset,len,results,telemetry;
         logic [31:0] actual_crc;
         repeat(4) @(negedge clk);
