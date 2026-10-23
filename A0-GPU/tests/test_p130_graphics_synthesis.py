@@ -49,6 +49,12 @@ class P130Tests(unittest.TestCase):
         j=valid_netlist();j['modules']['a0_triangle_scissor_depth_blend_p102']['ports']={}
         with self.assertRaisesRegex(ValueError,'I/O'):mod.summarize_netlist(j)
 
+    def test_reject_hierarchical_cell(self):
+        j=valid_netlist()
+        j['modules']['a0_triangle_scissor_depth_blend_p102']['cells']['a']['type']='a0_p70_rgb_blend'
+        with self.assertRaisesRegex(ValueError,'unflattened'):
+            mod.summarize_netlist(j)
+
     def test_reject_missing_witness(self):
         with self.assertRaisesRegex(ValueError,'witness'):mod.validate_witness('')
 
@@ -89,6 +95,7 @@ class P130Tests(unittest.TestCase):
         self.assertIn('FRAME_WIDTH 4',script)
         self.assertIn('FRAME_HEIGHT 4',script)
         self.assertIn('check -assert',script)
+        self.assertIn('synth -flatten',script)
 
     def test_missing_real_tools_not_run(self):
         with tempfile.TemporaryDirectory() as td:
