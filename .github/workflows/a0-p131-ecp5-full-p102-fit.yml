@@ -55,7 +55,7 @@ jobs:
           assert e['target']=='LFE5U-85F-CABGA756-speed6'
           assert e['synthesis_success'] and e['placed_and_routed']
           assert e['mapped_cell_count']>0 and e['internal_timing_met']
-          assert e['resources']['TRELLIS_SLICE']['used']>0
+          assert e['resources']['TRELLIS_COMB']['used']>0
           assert e['resources']['TRELLIS_IO']['used']>0
           assert e['internal_clocks']
           assert e['io_pins_constrained'] is False

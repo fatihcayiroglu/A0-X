@@ -71,7 +71,7 @@ def summarize_route(report: dict, min_mhz: float = CLOCK_MHZ) -> dict:
     util = report.get("utilization")
     if not isinstance(util, dict) or not util:
         raise ValueError("missing physical utilization")
-    for key in ("TRELLIS_SLICE", "TRELLIS_IO"):
+    for key in ("TRELLIS_COMB", "TRELLIS_IO"):
         if key not in util:
             raise ValueError(f"missing real ECP5 resource {key}")
     resources = {}
@@ -82,7 +82,7 @@ def summarize_route(report: dict, min_mhz: float = CLOCK_MHZ) -> dict:
         if type(used) is not int or type(available) is not int or used < 0 or available <= 0 or used > available:
             raise ValueError(f"overcapacity or malformed resource: {key}")
         resources[key] = {"used": used, "available": available}
-    if resources["TRELLIS_SLICE"]["used"] == 0 or resources["TRELLIS_IO"]["used"] == 0:
+    if resources["TRELLIS_COMB"]["used"] == 0 or resources["TRELLIS_IO"]["used"] == 0:
         raise ValueError("FPGA design optimized away or no real I/O")
     fmax = report.get("fmax")
     if not isinstance(fmax, dict) or not fmax:

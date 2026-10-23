@@ -13,7 +13,7 @@ spec.loader.exec_module(mod)
 
 def fake_route():
     return {"utilization": {
-        "TRELLIS_SLICE": {"used": 121, "available": 41820},
+        "TRELLIS_COMB": {"used": 121, "available": 41820},
         "TRELLIS_IO": {"used": 12, "available": 205},
         "DP16KD": {"used": 2, "available": 208},
         "MULT18X18D": {"used": 1, "available": 156}},
@@ -29,15 +29,15 @@ class P131ParserTests(unittest.TestCase):
     def test_route_pass(self):
         x = mod.summarize_route(fake_route())
         self.assertTrue(x['internal_timing_met'])
-        self.assertEqual(x['resources']['TRELLIS_SLICE']['used'], 121)
+        self.assertEqual(x['resources']['TRELLIS_COMB']['used'], 121)
 
     def test_missing_resources(self):
-        r = fake_route(); del r['utilization']['TRELLIS_SLICE']
+        r = fake_route(); del r['utilization']['TRELLIS_COMB']
         with self.assertRaisesRegex(ValueError, 'missing real'):
             mod.summarize_route(r)
 
     def test_overcapacity(self):
-        r = fake_route(); r['utilization']['TRELLIS_SLICE']['used'] = 99999
+        r = fake_route(); r['utilization']['TRELLIS_COMB']['used'] = 99999
         with self.assertRaisesRegex(ValueError, 'overcapacity'):
             mod.summarize_route(r)
 
@@ -47,7 +47,7 @@ class P131ParserTests(unittest.TestCase):
             mod.summarize_route(r)
 
     def test_zero_logic(self):
-        r = fake_route(); r['utilization']['TRELLIS_SLICE']['used'] = 0
+        r = fake_route(); r['utilization']['TRELLIS_COMB']['used'] = 0
         with self.assertRaisesRegex(ValueError, 'optimized'):
             mod.summarize_route(r)
 

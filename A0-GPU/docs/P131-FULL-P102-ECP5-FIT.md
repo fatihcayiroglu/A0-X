@@ -13,7 +13,7 @@ framebuffer; require an actual device-specific mapped top and `check -assert`.
 Then use `nextpnr-ecp5 --85k --package CABGA756 --speed 6` to place and route.
 Only accept real post-route `utilization` and `fmax` in the JSON report if every
 resource is within capacity, no timeout or tool failure occurred, and the
-routed clock meets 1.0 MHz. Never use `--timing-allow-fail`.
+routed clock meets 1.0 MHz. The nextpnr ECP5 report names physical LUT BELs `TRELLIS_COMB` (not `TRELLIS_SLICE`). Never use `--timing-allow-fail`.
 
 **What P131 does not prove:** No user-specified board, pin assignment/LPF,
 external I/O timing, bitstream/flash operation, VRAM/PCIe/monitor connectivity,
