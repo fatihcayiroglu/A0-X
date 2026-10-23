@@ -29,6 +29,9 @@ def run():
                 return 1
             if any(x in result.stdout+result.stderr for x in ('FATAL:', 'NOT_RUN', 'Traceback')):
                 return 1
+            # Only after real Icarus compilation and the exact TB witness,
+            # expose a standalone marker to the inherited strict gate.
+            print(MARKER, flush=True)
             return 0
         except (OSError,subprocess.TimeoutExpired) as exc:
             print('P122_REAL_RTL_FAILURE',repr(exc),flush=True)
