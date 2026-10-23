@@ -23,8 +23,17 @@ jobs:
       - name: Install real RTL and FPGA tools
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y iverilog yosys nextpnr-ecp5
+          # Prefer the hosted runner's existing package indexes. Bound all
+          # package manager hangs; retry once with refreshed indexes if needed.
+          if ! timeout 180s sudo apt-get install -y -o Acquire::Retries=2 \
+              -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 \
+              iverilog yosys nextpnr-ecp5; then
+            timeout 180s sudo apt-get update -o Acquire::Retries=2 \
+              -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20
+            timeout 180s sudo apt-get install -y -o Acquire::Retries=2 \
+              -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 \
+              iverilog yosys nextpnr-ecp5
+          fi
           iverilog -V | head -n 2
           yosys -V
           nextpnr-ecp5 --version
