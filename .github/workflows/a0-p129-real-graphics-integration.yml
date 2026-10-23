@@ -1,0 +1,70 @@
+name: A0-X P129 real raster-depth-blend framebuffer RTL integration
+on:
+  push:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv'
+      - 'A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv'
+      - 'A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv'
+      - 'A0-GPU/rtl/graphics/a0_p68_depth_compare.sv'
+      - 'A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv'
+      - 'A0-GPU/tests/rtl/a0_p129_raster_depth_blend_integration_tb.sv'
+      - 'A0-GPU/tests/test_p129_graphics_gate.py'
+      - 'A0-GPU/tools/a0_p129_graphics_gate.py'
+      - '.github/workflows/a0-p129-real-graphics-integration.yml'
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv'
+      - 'A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv'
+      - 'A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv'
+      - 'A0-GPU/rtl/graphics/a0_p68_depth_compare.sv'
+      - 'A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv'
+      - 'A0-GPU/tests/rtl/a0_p129_raster_depth_blend_integration_tb.sv'
+      - 'A0-GPU/tests/test_p129_graphics_gate.py'
+      - 'A0-GPU/tools/a0_p129_graphics_gate.py'
+      - '.github/workflows/a0-p129-real-graphics-integration.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p129-real-graphics-chain:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual Icarus RTL compiler and simulator
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y iverilog
+          command -v iverilog
+          command -v vvp
+      - name: Run independent strict-gate tests
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s A0-GPU/tests -p 'test_p129_graphics_gate.py' -v
+      - name: Compile and simulate integrated graphics datapath
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -B A0-GPU/tools/a0_p129_graphics_gate.py --evidence EVIDENCE/P129/graphics
+      - name: Assert real tool evidence but never physical readiness
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path('EVIDENCE/P129/graphics/p129_graphics.json').read_text())
+          assert report['status']=='PASS' and report['real_simulator'] is True
+          assert report['real_rtl_tests_passed']==1
+          assert report['compile_exit_code']==0 and report['simulate_exit_code']==0
+          assert report['witness']=={'triangles_completed':3,'committed_pixel_events':9,'framebuffer_pixels':16}
+          assert len(report['sources'])==6
+          for key in ('physical_board_tested','physical_gpu_qualified','pci_express_qualified',
+                      'display_output_qualified','fpga_timing_qualified','device_programmed'):
+              assert report[key] is False, key
+          PY
+      - name: Upload simulation and fail-closed evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-p129-real-raster-depth-blend-evidence
+          path: EVIDENCE/P129/graphics/
+          if-no-files-found: warn
