@@ -45,7 +45,7 @@ Status: **RTL CANDIDATE — automated real-Icarus tests, direct-P102 differentia
 
 ## Qualification gates (required before merging; implemented gates run in GitHub Actions)
 
-- Real Icarus testbench covers reset, write/read roundtrip, clear, triangle, readback, invalid address/misalignment, reserved bits, launch while busy, completion acknowledgment, sustained response backpressure, and response reset. The differential test covers depth, blend and scissor. Additional explicit no-duplicate-launch and snapshot-under-midflight-write directed tests remain useful hardening.
+- Real Icarus testbench covers reset, write/read roundtrip, clear, triangle, readback, invalid address/misalignment, reserved bits, launch while busy, completion acknowledgment, sustained response backpressure, and response reset. The differential test covers depth, blend and scissor. Held-valid response-backpressure and midflight staged-register mutation tests are included. Formal protocol verification and physical-board checks remain outside this milestone.
 - Differential Icarus test compares every pixel's color/depth with independently driven direct P102 through clear, triangle, depth, blend, and scissor workload; fails on any mismatch.
 - Yosys synthesis of the wrapper **and** P102; prove no unresolved hierarchy and no latch cells.
 - ECP5-85K nextpnr place-route with genuine mapped utilization and internal timing. Require top-level IO count be below a documented package budget. No `--timing-allow-fail`; preserve P126/P129/P130/P131 regression gates.
