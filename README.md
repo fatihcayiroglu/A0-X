@@ -1,21 +1,15 @@
-# A0-X GPU
+# A0-X GPU — experimental GPU development
 
-Independent experimental GPU research and development project.
+This public repository contains research-stage GPU source work. It is **not** a manufactured, FPGA-qualified, timing-closed, or hardware-validated GPU.
 
-## Current stage: P126
+## P126 staged import status
 
-The latest prepared source package covers the P126 **explicit reset-boundary telemetry receiver**, Python regressions and 18 inherited real-RTL qualification gates.
+The P126 reset-boundary host receiver is being transferred from the verified source archive. The complete P126 source tree is **not yet present**, including supporting P119 code, RTL sources, test vectors and P126 qualification tooling.
 
-**Qualification is not yet established.** Local Python tests have passed, but real HDL simulation has not been run successfully in the available development environment. No FPGA, timing-closure, physical-board or manufactured GPU qualification is claimed.
+- `A0-GPU/sim/a0_p126_reset_boundary_receiver.py`: host-side reset epoch isolation, depends on P119 reconciler (not yet imported).
+- `ci/staged/a0-p126-reset-boundary-18-real-rtl.yml`: proposed real Icarus Verilog qualification workflow, **intentionally inactive until dependencies arrive**.
+- After full source import the workflow will be moved to `.github/workflows/` and real HDL results will be checked.
 
-## Source import status
+**Current evidence:** local Python-only tests passed in the previously prepared package; GitHub has not run the 18 actual RTL tests. No fake PASS is permitted. No RTL, FPGA, device authentication or physical GPU certification is asserted.
 
-**Pending:** Full P126 source tree has not yet been committed to this repository. Do not mark RTL CI successful or claim hardware qualification until source import and genuine Icarus Verilog runs complete.
-
-The source archive and Windows GitHub publishing kit were prepared separately in the ChatGPT conversation; they are not yet present in this GitHub repository.
-
-## Safety and scope
-
-This repository is currently **public**. Its visibility should be changed to private before publishing source code if private development is intended.
-
-Bridge and WolfOS are separate repositories and must not be modified as part of A0-X development.
+The project is intended to remain **public** as the owner requested. Bridge and WolfOS are separate and must not be modified by A0-X tasks.
