@@ -36,7 +36,8 @@ module a0_p132_command_bus_tb;
             end
             @(posedge clk);
             @(negedge clk);
-            req_valid = 0;
+            // Deliberately keep req_valid asserted while req_ready is low:
+            // a stalled transaction must not execute a second time.
             if (rsp_valid !== 1'b1 || rsp_error !== expected_error)
                 $fatal(1,"P132 response error at %h: got valid=%b error=%b expected=%b",
                        addr,rsp_valid,rsp_error,expected_error);
@@ -51,6 +52,7 @@ module a0_p132_command_bus_tb;
                     (check_data && rsp_rdata !== expected_data) || req_ready)
                     $fatal(1,"P132 response not stable under backpressure");
             end
+            req_valid = 0;
             rsp_ready = 1;
             @(posedge clk);
             @(negedge clk);
