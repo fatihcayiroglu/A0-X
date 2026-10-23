@@ -127,6 +127,10 @@ module a0_p132_diff_tb;
     wr(8'h28,32'h00000004);
     wr(8'h08,4);
     wr(8'h08,2);
+    // Mutate staging registers after accepted launch; the in-flight triangle
+    // must keep the original color/depth snapshot, matching direct P102.
+    wr(8'h20,32'h00ff00ff);
+    wr(8'h24,32'h00000001);
     wait_done(3);
     compare_frame();
     if (filled == 0) $fatal(1,"vacuous differential: no drawn pixels");
