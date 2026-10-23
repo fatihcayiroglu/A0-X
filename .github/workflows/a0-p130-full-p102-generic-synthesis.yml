@@ -1,0 +1,65 @@
+name: A0-X P130 narrow raster real RTL vs reference and full graphics synthesis
+on:
+  push:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv'
+      - 'A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv'
+      - 'A0-GPU/tests/rtl/a0_p130_*.sv'
+      - 'A0-GPU/tools/a0_p130_graphics_synthesis.py'
+      - 'A0-GPU/tests/test_p130_graphics_synthesis.py'
+      - '.github/workflows/a0-p130-full-p102-generic-synthesis.yml'
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv'
+      - 'A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv'
+      - 'A0-GPU/tests/rtl/a0_p130_*.sv'
+      - 'A0-GPU/tools/a0_p130_graphics_synthesis.py'
+      - 'A0-GPU/tests/test_p130_graphics_synthesis.py'
+      - '.github/workflows/a0-p130-full-p102-generic-synthesis.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p130-exact-raster-full-generic-synthesis:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install genuine Icarus and Yosys
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y iverilog yosys
+          iverilog -V | head -5
+          yosys -V
+      - name: Run exact-width and fail-closed evidence tests
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s A0-GPU/tests -p 'test_p130_graphics_synthesis.py' -v
+      - name: Real differential RTL and full P102 generic synthesis
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -B A0-GPU/tools/a0_p130_graphics_synthesis.py --evidence EVIDENCE/P130/qualification --timeout 420
+      - name: Reject any missing or overstated evidence
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          e=json.loads(Path('EVIDENCE/P130/qualification/p130_qualification.json').read_text())
+          assert e['status']=='PASS' and e['simulated_actual_rtl'] is True
+          assert e['synthesized_full_p102'] is True
+          assert e['equivalence']['triangles']==196
+          assert e['synthesis']['generic_cell_count']>0
+          assert e['fpga_placed_routed'] is False
+          assert e['fpga_timing_qualified'] is False
+          assert e['physical_board_tested'] is False
+          assert e['physical_gpu_qualified'] is False
+          PY
+      - name: Upload real PASS/FAIL/NOT_RUN evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-p130-exact-raster-full-generic-synthesis-evidence
+          path: EVIDENCE/P130/qualification/
+          if-no-files-found: warn
