@@ -1,0 +1,66 @@
+name: A0-X P133 real dual-clock command bridge RTL (not physical CDC qualification)
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p133_*.sv'
+      - 'A0-GPU/rtl/graphics/tb/a0_p133_*.sv'
+      - '.github/workflows/a0-p133-dual-clock-rtl.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p133_*.sv'
+      - 'A0-GPU/rtl/graphics/tb/a0_p133_*.sv'
+      - '.github/workflows/a0-p133-dual-clock-rtl.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p133-real-dual-clock-rtl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install genuine Verilog simulator with finite timeout
+        run: |
+          set -euo pipefail
+          timeout 480s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=25
+          timeout 480s sudo apt-get install -y iverilog -o Acquire::Retries=2 -o Acquire::http::Timeout=25
+          iverilog -V | head -2
+      - name: Run actual two-frequency FIFO plus P132-P102 RTL
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P133
+          iverilog -g2012 -s a0_p133_dual_clock_bridge_tb -o EVIDENCE/P133/p133.vvp \
+            A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv \
+            A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv \
+            A0-GPU/rtl/graphics/a0_p68_depth_compare.sv \
+            A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv \
+            A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv \
+            A0-GPU/rtl/graphics/a0_p132_command_bus.sv \
+            A0-GPU/rtl/graphics/a0_p133_async_fifo.sv \
+            A0-GPU/rtl/graphics/a0_p133_dual_clock_bridge.sv \
+            A0-GPU/rtl/graphics/tb/a0_p133_dual_clock_bridge_tb.sv \
+            2>&1 | tee EVIDENCE/P133/compile.log
+          vvp EVIDENCE/P133/p133.vvp | tee EVIDENCE/P133/simulation.log
+          grep -qx 'P133_REAL_DUAL_CLOCK_RTL_PASS ordered burst/backpressure/clear/readback/reset' EVIDENCE/P133/simulation.log
+      - name: Record bounded honest simulation-only evidence
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("EVIDENCE/P133")
+          log=(p/"simulation.log").read_text()
+          assert "P133_REAL_DUAL_CLOCK_RTL_PASS" in log
+          e={"milestone":"P133","status":"PASS","actual_rtl_simulated":True,
+             "two_clock_simulation":True,"ordered_backpressure_checked":True,
+             "rtl_synthesized":False,"physical_cdc_qualified":False,
+             "fpga_placed_routed":False,"board_tested":False}
+          (p/"qualification.json").write_text(json.dumps(e,indent=2))
+          PY
+      - name: Upload real PASS or failed simulation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-p133-real-dual-clock-rtl-evidence
+          path: EVIDENCE/P133/
+          if-no-files-found: warn
