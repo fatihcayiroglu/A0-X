@@ -75,7 +75,7 @@ jobs:
           path: EVIDENCE/P133/
           if-no-files-found: warn
 
-  p133-real-ecp5-netlist:
+  p133-real-ecp5-netlist-and-route:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -83,17 +83,29 @@ jobs:
       - name: Install real Yosys with bounded package time
         run: |
           set -euo pipefail
-          if ! timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys; then
+          if ! timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5; then
             timeout 300s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
-            timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys
+            timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5
           fi
           yosys -V
+          nextpnr-ecp5 --version
       - name: Synthesize actual full P133 bridge plus P132 and P102 for ECP5
         run: |
           set -euo pipefail
           mkdir -p EVIDENCE/P133-SYNTH
           yosys -p "read_verilog -sv A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv A0-GPU/rtl/graphics/a0_p132_command_bus.sv A0-GPU/rtl/graphics/a0_p133_async_fifo.sv A0-GPU/rtl/graphics/a0_p133_dual_clock_bridge.sv; hierarchy -check -top a0_p133_dual_clock_bridge -chparam FRAME_WIDTH 4 -chparam FRAME_HEIGHT 4; synth_ecp5 -top a0_p133_dual_clock_bridge -json EVIDENCE/P133-SYNTH/p133-netlist.json; check -assert" 2>&1 | tee EVIDENCE/P133-SYNTH/yosys.log
-      - name: Fail closed on unmapped cells, latch, wrong top or unbounded IO
+      - name: Actually place and route complete P133 RTL for ECP5-85K
+        run: |
+          set -euo pipefail
+          # Artificial 1 MHz domain clocks; unconstrained external pins.
+          # This does NOT qualify asynchronous CDC or board-level timing.
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P133-SYNTH/p133-netlist.json \
+            --textcfg EVIDENCE/P133-SYNTH/p133-route.config \
+            --report EVIDENCE/P133-SYNTH/p133-route.json \
+            --freq 1 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P133-SYNTH/nextpnr.log
+      - name: Fail closed on unmapped cells, latch, wrong top or unbounded IO and routing failure
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -111,10 +123,16 @@ jobs:
           types=[v['type'] for v in t['cells'].values()]
           assert types and any('FF' in v.upper() for v in types), 'empty/no flops'
           assert not any(v.startswith('$') or v.startswith('a0_') or 'LATCH' in v.upper() for v in types), 'unmapped cell/latch'
+          route=json.loads((p/'p133-route.json').read_text())
+          util=route['utilization']
+          for kind in ('TRELLIS_COMB','TRELLIS_IO'):
+            assert 0<util[kind]['used']<=util[kind]['available'], f'invalid mapping for {kind}'
+          fmax=route['fmax']
+          assert fmax and all(v['achieved']>=v['constraint']>=1.0 for v in fmax.values()), '1 MHz internal timing failed'
           evidence={'milestone':'P133','result':'PASS','genuine_yosys_ecp5_synthesis':True,
                     'top_io_bits':io,'mapped_cells':len(types),'latches_or_unmapped':False,
-                    'fpga_placed_routed':False,'timing_verified':False,
-                    'physical_cdc_qualified':False,'board_tested':False}
+                    'fpga_placed_routed':True,'internal_1mhz_timing_report_passed':True,'clock_domains_reported':len(fmax),
+                    'physical_cdc_qualified':False,'external_io_timing_qualified':False,'board_tested':False}
           (p/'qualification.json').write_text(json.dumps(evidence,indent=2))
           print(evidence)
           PY
@@ -122,6 +140,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: a0-p133-real-ecp5-netlist-evidence
+          name: a0-p133-real-ecp5-route-evidence
           path: EVIDENCE/P133-SYNTH/
           if-no-files-found: warn
