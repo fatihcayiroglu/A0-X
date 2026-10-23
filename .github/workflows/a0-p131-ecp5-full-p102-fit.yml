@@ -1,0 +1,73 @@
+name: A0-X P131 full P102 ECP5 85K fabric-fit and internal timing (not board)
+on:
+  push:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv'
+      - 'A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv'
+      - 'A0-GPU/rtl/graphics/a0_p68_depth_compare.sv'
+      - 'A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv'
+      - 'A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv'
+      - 'A0-GPU/tools/a0_p131_ecp5_fit.py'
+      - 'A0-GPU/tests/test_p131_ecp5_fit.py'
+      - '.github/workflows/a0-p131-ecp5-full-p102-fit.yml'
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv'
+      - 'A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv'
+      - 'A0-GPU/rtl/graphics/a0_p68_depth_compare.sv'
+      - 'A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv'
+      - 'A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv'
+      - 'A0-GPU/tools/a0_p131_ecp5_fit.py'
+      - 'A0-GPU/tests/test_p131_ecp5_fit.py'
+      - '.github/workflows/a0-p131-ecp5-full-p102-fit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p131-full-p102-ecp5-fit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Yosys and ECP5 place-and-route tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y yosys nextpnr-ecp5
+          yosys -V
+          nextpnr-ecp5 --version
+      - name: Run strict evidence-parser regression tests
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s A0-GPU/tests -p 'test_p131_ecp5_fit.py' -v
+      - name: Run real full-P102 ECP5-85K device fit, place-route and timing
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -B A0-GPU/tools/a0_p131_ecp5_fit.py --evidence EVIDENCE/P131/ecp5 --timeout 900
+      - name: Require real route PASS without falsely claiming a board qualification
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('EVIDENCE/P131/ecp5/p131_ecp5_qualification.json')
+          e=json.loads(p.read_text())
+          assert e['milestone']=='P131' and e['status']=='PASS'
+          assert e['target']=='LFE5U-85F-CABGA756-speed6'
+          assert e['synthesis_success'] and e['placed_and_routed']
+          assert e['mapped_cell_count']>0 and e['internal_timing_met']
+          assert e['resources']['TRELLIS_COMB']['used']>0
+          assert e['resources']['TRELLIS_IO']['used']>0
+          assert e['internal_clocks']
+          assert e['io_pins_constrained'] is False
+          assert e['external_timing_qualified'] is False
+          assert e['bitstream_generated'] is False
+          assert e['physical_device_programmed'] is False
+          assert e['physical_gpu_qualified'] is False
+          PY
+      - name: Upload honest PASS FAIL or NOT_RUN evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-p131-ecp5-full-p102-fit-evidence
+          path: EVIDENCE/P131/ecp5/
+          if-no-files-found: warn
