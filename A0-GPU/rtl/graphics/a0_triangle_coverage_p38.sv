@@ -25,27 +25,38 @@ module a0_triangle_coverage_p38 #(
     output logic        [15:0] pixel_y,
     output logic               done
 );
-    // Supported dimensions: 1..32767. The 64-bit edge product accommodates
-    // the complete signed-16 vertex range and the specified framebuffer range.
+    // P130 exact-width optimization: under FRAME_WIDTH/HEIGHT <= 32767 and
+    // signed-16 vertices, dx/dy fit signed 17 bits, rx/ry signed 18 bits,
+    // each product signed 35 bits, their difference signed 36 bits. This
+    // removes unnecessary 64x64 combinational multiplies without truncation.
+    // End-to-end equivalence with the original 64-bit P38 is gated by CI.
     logic active;
     logic [15:0] scan_x, scan_y;
     logic signed [15:0] ax, ay, bx, by, cx, cy;
-    logic signed [63:0] input_area;
-    logic signed [63:0] e0, e1, e2;
-    logic signed [31:0] sample_x2, sample_y2;
+    logic signed [35:0] input_area;
+    logic signed [35:0] e0, e1, e2;
+    logic signed [16:0] sample_x2, sample_y2;
     logic hit;
+    initial begin
+        if (FRAME_WIDTH < 1 || FRAME_WIDTH > 32767 || FRAME_HEIGHT < 1 || FRAME_HEIGHT > 32767)
+            $fatal(1, "P130 P38 dimensions must be in 1..32767");
+    end
 
-    function automatic logic signed [63:0] edge_at (
+    function automatic logic signed [35:0] edge_at (
         input logic signed [15:0] ex0, ey0, ex1, ey1,
-        input logic signed [31:0] px2, py2
+        input logic signed [16:0] px2, py2
     );
-        logic signed [63:0] dx, dy, rx, ry;
+        logic signed [16:0] dx, dy;
+        logic signed [17:0] rx, ry;
+        logic signed [34:0] product_x, product_y;
         begin
-            dx = 64'($signed(ex1)) - 64'($signed(ex0));
-            dy = 64'($signed(ey1)) - 64'($signed(ey0));
-            rx = 64'($signed(px2)) - (64'($signed(ex0)) * 64'sd2);
-            ry = 64'($signed(py2)) - (64'($signed(ey0)) * 64'sd2);
-            edge_at = dx * ry - dy * rx;
+            dx = $signed(ex1) - $signed(ex0);
+            dy = $signed(ey1) - $signed(ey0);
+            rx = $signed(px2) - ($signed(ex0) * 18'sd2);
+            ry = $signed(py2) - ($signed(ey0) * 18'sd2);
+            product_x = dx * ry;
+            product_y = dy * rx;
+            edge_at = $signed(product_x) - $signed(product_y);
         end
     endfunction
 
@@ -58,9 +69,9 @@ module a0_triangle_coverage_p38 #(
 
     always_comb begin
         input_area = edge_at(x0, y0, x1, y1,
-                             $signed(x2) * 32'sd2, $signed(y2) * 32'sd2);
-        sample_x2 = ($signed({1'b0, scan_x}) * 32'sd2) + 32'sd1;
-        sample_y2 = ($signed({1'b0, scan_y}) * 32'sd2) + 32'sd1;
+                             $signed(x2) * 17'sd2, $signed(y2) * 17'sd2);
+        sample_x2 = ($signed({1'b0, scan_x}) * 17'sd2) + 17'sd1;
+        sample_y2 = ($signed({1'b0, scan_y}) * 17'sd2) + 17'sd1;
         e0 = edge_at(ax, ay, bx, by, sample_x2, sample_y2);
         e1 = edge_at(bx, by, cx, cy, sample_x2, sample_y2);
         e2 = edge_at(cx, cy, ax, ay, sample_x2, sample_y2);
@@ -105,11 +116,11 @@ module a0_triangle_coverage_p38 #(
                     end
                 end
             end else if (!pixel_valid || pixel_ready) begin
-                if ((int'(scan_x) == FRAME_WIDTH - 1) &&
-                    (int'(scan_y) == FRAME_HEIGHT - 1)) begin
+                if ((scan_x == FRAME_WIDTH - 1) &&
+                    (scan_y == FRAME_HEIGHT - 1)) begin
                     active <= 1'b0;
                     done <= 1'b1;
-                end else if (int'(scan_x) == FRAME_WIDTH - 1) begin
+                end else if (scan_x == FRAME_WIDTH - 1) begin
                     scan_x <= '0;
                     scan_y <= scan_y + 16'd1;
                 end else begin

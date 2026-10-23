@@ -52,7 +52,7 @@ module a0_triangle_scissor_depth_blend_p102 #(
     assign tri_ready = rst_n && initialized && !clearing && !clear_valid && raster_ready;
     assign busy = clearing || !raster_ready;
     assign tri_done = rst_n && raster_done;
-    assign raster_index = ADDR_BITS'((int'(raster_y)*FRAME_WIDTH)+int'(raster_x));
+    assign raster_index = ADDR_BITS'((raster_y*FRAME_WIDTH)+raster_x);
 
     a0_triangle_coverage_p38 #(.FRAME_WIDTH(FRAME_WIDTH),.FRAME_HEIGHT(FRAME_HEIGHT)) raster(
       .clk(clk),.rst_n(rst_n),.tri_valid(tri_valid && tri_ready),.tri_ready(raster_ready),
@@ -77,12 +77,12 @@ module a0_triangle_scissor_depth_blend_p102 #(
     );
     assign write_pixel = rst_n && initialized && !clearing && raster_pixel_valid && depth_pass;
     always_comb begin
-        read_valid = rst_n && initialized && int'(read_x)<FRAME_WIDTH && int'(read_y)<FRAME_HEIGHT;
+        read_valid = rst_n && initialized && read_x<FRAME_WIDTH && read_y<FRAME_HEIGHT;
         read_color = '0;
         read_depth = '0;
         if (read_valid) begin
-            read_color = color_ram[(int'(read_y)*FRAME_WIDTH)+int'(read_x)];
-            read_depth = depth_ram[(int'(read_y)*FRAME_WIDTH)+int'(read_x)];
+            read_color = color_ram[(read_y*FRAME_WIDTH)+read_x];
+            read_depth = depth_ram[(read_y*FRAME_WIDTH)+read_x];
         end
     end
     always_ff @(posedge clk) begin
@@ -104,7 +104,7 @@ module a0_triangle_scissor_depth_blend_p102 #(
             if (clearing) begin
                 color_ram[clear_index] <= clear_color_q;
                 depth_ram[clear_index] <= clear_depth_q;
-                if (int'(clear_index)==PIXELS-1) begin
+                if (clear_index==PIXELS-1) begin
                     clearing <= 1'b0;
                     initialized <= 1'b1;
                     clear_done <= 1'b1;
