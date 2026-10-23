@@ -32,6 +32,20 @@ jobs:
           iverilog -g2012 -s a0_p132_command_bus_tb -o EVIDENCE/P132/p132.vvp             A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv             A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv             A0-GPU/rtl/graphics/a0_p68_depth_compare.sv             A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv             A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv             A0-GPU/rtl/graphics/a0_p132_command_bus.sv             A0-GPU/rtl/graphics/tb/a0_p132_command_bus_tb.sv             2>&1 | tee EVIDENCE/P132/compile.log
           vvp EVIDENCE/P132/p132.vvp | tee EVIDENCE/P132/rtl.log
           grep -qx 'P132_REAL_RTL_PASS bounded bus reset/invalid/backpressure/clear/draw' EVIDENCE/P132/rtl.log
+      - name: Differential real RTL versus independently driven original P102
+        run: |
+          set -euo pipefail
+          iverilog -g2012 -s a0_p132_diff_tb -o EVIDENCE/P132/p132_diff.vvp \
+            A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv \
+            A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv \
+            A0-GPU/rtl/graphics/a0_p68_depth_compare.sv \
+            A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv \
+            A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv \
+            A0-GPU/rtl/graphics/a0_p132_command_bus.sv \
+            A0-GPU/rtl/graphics/tb/a0_p132_diff_tb.sv \
+            2>&1 | tee EVIDENCE/P132/differential-compile.log
+          vvp EVIDENCE/P132/p132_diff.vvp | tee EVIDENCE/P132/differential-rtl.log
+          grep -qx 'P132_DIFFERENTIAL_RTL_PASS direct P102 full-frame clear/draw/depth/blend/scissor' EVIDENCE/P132/differential-rtl.log
       - name: Device synthesize and route bounded top on real ECP5-85K
         run: |
           set -euo pipefail
