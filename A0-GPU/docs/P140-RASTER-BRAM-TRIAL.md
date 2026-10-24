@@ -1,6 +1,22 @@
 # P140 — experimental P102 raster-to-P139/P138 FPGA BRAM integration
 
-**Status: draft and unqualified until exact-head real RTL and FPGA CI pass.**
+**Status: candidate verified on code/workflow head `4e3abe83`, latest documentation-head CI required before merge.**
+
+## Initial measured research evidence (24 October 2026)
+
+The genuine [P140 Actions run 40078458739](https://github.com/fatihcayiroglu/A0-X/actions/runs/40078458739) passed all P140 jobs. New RTL tests compare original P102 with the actual P140-P139-P138 synchronous BRAM renderer:
+
+| Geometry | RGB/depth pixel reads checked | Completed-draw writes: original / BRAM | Concurrent host reads accepted | Host reads stalled on bank collisions |
+|---|---:|---:|---:|---:|
+| 4×4 | 112 | 60 / 60 | 30 | 26 |
+| 7×5 | 245 | 135 / 135 | 29 | 27 |
+| 8×8 | 448 | 244 / 244 | 29 | 27 |
+
+Each test includes two clears, five completed triangle draws, winding reversal, blend, depth and scissor, one degenerate triangle, invalid host coordinate reads and abort/reinitialization via reset. An earlier test falsely compared aggregate writes across a deliberately aborted triangle; the corrected test checks **each completed draw separately** and still verifies all final frame pixels. Different progress before mid-operation reset does not imply lost committed output, and is excluded from completed-draw equality.
+
+Real Yosys mapped **4 DP16KD FPGA BRAM cells** and nextpnr ECP5-85K placed/routed the integrated P140 research design (4×4, seed 1, CABGA756/speed 6, unconstrained pins, 5 MHz internal target). Final tool-reported Fmax was **37.20 MHz**. This is a new synchronous BRAM read/modify/write pipeline and is **slower in mapped-clock Fmax than the old P137 register-based 50.44 MHz research design**; it may also require more clocks per covered pixel. Do **not** describe it as a throughput or performance improvement. Main P102 and P132 are unchanged.
+
+
 
 ## What is integrated
 
