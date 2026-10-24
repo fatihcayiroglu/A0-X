@@ -107,7 +107,7 @@ jobs:
           p=Path('EVIDENCE/P150/route')
           m=json.loads((p/'netlist.json').read_text())['modules']['a0_p150_unorm_simd4_alu']
           pins=sum(len(v['bits']) for v in m['ports'].values())
-          assert pins==132,('P150 RTL pin budget changed',pins)
+          assert pins==133,('P150 RTL pin budget changed',pins)
           c=collections.Counter(x['type'] for x in m['cells'].values())
           assert c.get('TRELLIS_COMB',0)>=20,('Shader arithmetic optimized away?',c)
           assert c.get('TRELLIS_FF',0)>=40,('Registered response missing?',c)
