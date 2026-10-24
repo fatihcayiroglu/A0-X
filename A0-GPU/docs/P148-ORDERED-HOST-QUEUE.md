@@ -21,6 +21,26 @@ P148 adds a separate `a0_p148_ordered_host_queue_top` wrapper **around the uncha
 - Genuine Yosys `synth_ecp5` + nextpnr ECP5-85K CABGA756 speed6 seed1, 4×4 framebuffer, 5MHz research internal timing target, unconstrained package I/O. Require **77 top-level port bits**, ≥2 genuine `DP16KD` BRAM primitives, no unmapped logic or latches, bounded I/O utilization and actual timing report. Do not claim any clock beyond the routed estimate.
 - Re-run inherited P126, P127, P132, P134 and active P147 P102/FPGA regression workflows on the **exact final PR head**. Never merge a failed/pending/missing regression.
 
+## Actual real RTL + ECP5 verification — 24 October 2026
+
+The code-head [GitHub Actions run 40101904318](https://github.com/fatihcayiroglu/A0-X/actions/runs/40101904318) completed both genuine jobs successfully.
+
+**FIFO stress, real Icarus + complete P147/P146/P144/P139/P138 RTL:** 4 queue slots filled while an earlier response was held; **12 full-queue stall cycles** and **12 held-response-stability cycles** observed. Host then drained **365 ordered requests** (initial five plus 120 iterations × 3) including **121 correctly ordered error replies** without a missing or duplicate response. Reset with **one response held plus four requests queued** cancelled all 5 pending epoch transactions; the next reset epoch returned two valid fresh read responses, including an expected reset register value.
+
+**Independent unchanged P102 reference (the entire real packed bus + full 16-bit raster + dual-bank BRAM):**
+
+| Frame shape | Clears | Finished draws | Color/depth pixels compared | Host transactions | Invalid/rejected requests | Two-pixel commit cycles |
+|---|---:|---:|---:|---:|---:|---:|
+| 4×4 | 2 | 5 | 112 | 636 | 55 | 29 |
+| 7×5 | 2 | 5 | 245 | 1,198 | 55 | 64 |
+| 8×8 | 2 | 5 | 448 | 2,060 | 55 | 121 |
+
+Signed vertex values **−257 and +1024**, alpha blending, LESS/LESS_EQUAL depth, scissor, degenerate triangles, bad commands, invalid pixel coordinates, reset during a triangle and registered readback were exercised. All frame RGB and stored depth matched P102; inherited P126/P127/P132/P134 work on the same head also passed before the document update.
+
+**Genuine FPGA technology mapping:** Yosys plus nextpnr ECP5-85K, CABGA756 speed6 seed1, 4×4 internal frame, 5MHz research target, unconstrained external pins routed successfully. The actual top has **77 I/O bits** (77 of 365 available TRELLIS_IO), **4 mapped `DP16KD` block RAM**, no unmapped cells/latches and **22.162 MHz tool-reported single-clock Fmax**. P147 baseline is **21.367 MHz** using a different, unqueued top; this slight Fmax difference is not a measured throughput gain, since FIFO handshakes also increase command latency.
+
+The final documentation-only PR head must rerun and pass its own CI before merge.
+
 ## Limits
 
 P148 prioritizes strict ordering and **no lost response** over host-side maximum transaction rate. Only a **single downstream P147 request** is processed at once, and the response buffer holds one word. It is not a multi-engine scheduler, PCIe block, physical signal integrity test, hardware VRAM, GPU driver, display scanout or proof of any gaming frame rate. A follow-on P149 might add explicit command transaction IDs and error/retry/recovery semantics, but none is implied here.
