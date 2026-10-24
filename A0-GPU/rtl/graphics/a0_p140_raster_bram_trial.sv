@@ -52,7 +52,7 @@ module a0_p140_raster_bram_trial #(
     logic mem_rsp0_valid,mem_rsp0_error;
     logic [47:0] mem_rsp0_data;
     logic [23:0] stored_color,stored_depth;
-    logic take_read,take_write,can_advance,clear_last;
+    logic take_read,take_write,take_opaque,skip_scissor,can_advance,clear_last;
     wire launch_clear=clear_valid && clear_ready;
     wire launch_tri=tri_valid && tri_ready;
 
@@ -95,21 +95,35 @@ module a0_p140_raster_bram_trial #(
       .output_rgb(blended_color)
     );
 
-    assign take_read=!clearing && !waiting_commit && raster_pixel_valid;
+    // P141 exact no-read fast path: a fully opaque ALWAYS-depth draw
+    // with depth_write enabled overwrites BOTH 24-bit fields. Since no
+    // previous color/depth is required, issue one BRAM write directly
+    // on this raster scan position. All other covered pixels use the
+    // original registered read/modify/write path.
+    assign skip_scissor=!clearing && !waiting_commit &&
+                         raster_pixel_valid && !scissor_pass;
+    assign take_opaque=!clearing && !waiting_commit &&
+                        raster_pixel_valid && scissor_pass &&
+                        depth_op_q==2'd0 && depth_write_q && !blend_enable_q;
+    assign take_read=!clearing && !waiting_commit && raster_pixel_valid &&
+                      scissor_pass && !take_opaque;
     assign take_write=!clearing && waiting_commit &&
                       raster_pixel_valid && mem_rsp0_valid &&
                       !mem_rsp0_error && depth_pass;
-    assign mem_req0_valid=clearing || take_read || take_write;
-    assign mem_req0_write=clearing || take_write;
+    assign mem_req0_valid=clearing || take_read || take_write || take_opaque;
+    assign mem_req0_write=clearing || take_write || take_opaque;
     assign mem_req0_x=clearing ? clear_x_q : raster_x;
     assign mem_req0_y=clearing ? clear_y_q : raster_y;
     assign mem_req0_data=clearing ? {clear_color_q,clear_depth_q} :
+                     take_opaque ? {tri_color_q,tri_depth_q} :
                      {blended_color,depth_write_q ? tri_depth_q : stored_depth};
     // Keep covered scan position stable during memory read. Reject a
     // depth-failed pixel without a write, but advance after read response.
     assign can_advance=waiting_commit && mem_rsp0_valid &&
                        !mem_rsp0_error && (!depth_pass || mem_req0_ready);
-    assign raster_pixel_ready=can_advance;
+    assign raster_pixel_ready=skip_scissor ||
+                              (take_opaque && mem_req0_ready) ||
+                              can_advance;
 
     a0_p139_xy_dual_pixel_port #(
       .FRAME_WIDTH(FRAME_WIDTH),.FRAME_HEIGHT(FRAME_HEIGHT)
@@ -167,6 +181,10 @@ module a0_p140_raster_bram_trial #(
 
         if(take_read && mem_req0_ready)
           waiting_commit<=1;
+        // Fast-path writes commit on this edge and cannot be counted
+        // by the previous cycle's read/modify/write completion pulse.
+        if(take_opaque && mem_req0_ready)
+          pixel_wrote<=1;
         if(waiting_commit && can_advance) begin
           if(take_write)pixel_wrote<=1;
           waiting_commit<=0;
