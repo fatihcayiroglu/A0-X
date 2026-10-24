@@ -1,10 +1,12 @@
 `timescale 1ns/1ps
-// P142 research: TWO adjacent row-major pixel positions evaluated per
-// clock and independently written into P139/P138's two physical BRAM banks.
-// ONLY fully opaque, depth-ALWAYS, depth-writing triangle fills are
-// supported. Any mode requiring a previous pixel needs a future RMW
-// hazard/latency pipeline. This is NOT a P102/P140 drop-in or an actual
-// board, VRAM, PCIe, scanout, or programmable shader.
+// P145 EXPERIMENTAL: P143's two row-major signed incremental edge
+// coverage candidates feed P144's two-lane depth test + RGB alpha blend
+// over real synchronous P139/P138 FPGA BRAM. Hold a pair until the
+// registered P144 completion pulse before advancing either edge state;
+// P144 read and write take separate beats. Supports ALWAYS/LESS/
+// LESS_EQUAL depth, depth-write toggle, exact alpha, and scissor.
+// Memory errors latch a reset-cleared FAULT. NOT a P102/P132 drop-in,
+// physical VRAM, PCIe device, display renderer or programmable shader.
 module a0_p145_dual_raster_depth_blend_trial #(
     parameter integer FRAME_WIDTH=4,
     parameter integer FRAME_HEIGHT=4,
