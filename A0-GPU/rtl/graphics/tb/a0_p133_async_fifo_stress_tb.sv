@@ -95,10 +95,17 @@ module a0_p133_fifo_stress_case #(
   end
 endmodule
 
-module a0_p133_async_fifo_stress_tb;
+module a0_p133_async_fifo_stress_tb #(
+  parameter integer HOST_HALF_NS=3,
+  parameter integer GPU_HALF_NS=11,
+  parameter integer GPU_PHASE_NS=0
+);
   reg host_clk=0, gpu_clk=0, rst_n=0;
-  always #3 host_clk=~host_clk;
-  always #11 gpu_clk=~gpu_clk;
+  always #(HOST_HALF_NS) host_clk=~host_clk;
+  initial begin
+    #(GPU_PHASE_NS);
+    forever #(GPU_HALF_NS) gpu_clk=~gpu_clk;
+  end
   wire done_req, done_rsp;
   a0_p133_fifo_stress_case #(.WIDTH(41),.SEED(1),.EXPECT_FULL(1)) request(
     .wclk(host_clk),.rclk(gpu_clk),.rst_n(rst_n),.done(done_req));
