@@ -34,7 +34,7 @@ module a0_p152_shaded_bus_p102_diff_tb #(
   wire [23:0] ref_color,ref_depth;
   wire launch_clear=req_valid&&req_ready&&req_write&&req_addr==5'd11&&req_wdata==1;
   wire launch_tri=dut.full_16bit_raster.raster_issue &&
-                  dut.full_16bit_raster.raster.core_tri_ready;
+                  dut.full_16bit_raster.core_tri_ready;
   integer ref_writes=0,dut_writes=0,dual_commits=0;
   integer clears=0,draws=0,checked=0,large_vertices=0;
   integer bus_txns=0,rejections=0,host_reads=0;
