@@ -34,7 +34,7 @@ module a0_p152_shader_triangle_p102_diff_tb #(
   wire [31:0] shader_debug_data;
   wire [23:0] last_shaded_rgb;
   integer shader_completed=0,shader_retire_total=0;
-  wire ref_fire=candidate.raster_issue && candidate.raster.core_tri_ready;
+  wire ref_fire=candidate.raster_issue && candidate.core_tri_ready;
   integer clears=0,draws=0,checked_pixels=0,ref_written=0,dut_written=0;
   integer completed_ref_writes=0,completed_bram_writes=0;
   integer live_host_accepts=0,live_host_stalls=0;
