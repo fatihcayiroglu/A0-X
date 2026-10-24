@@ -1,6 +1,6 @@
 # P138 — dual-bank framebuffer scratchpad (research prototype)
 
-**Status: draft.** This is a separate two-lane storage building block, NOT wired to P102 or the public command bus. Its purpose is to prove safe parallel bank accesses before the risky renderer integration.
+**Status: draft; RTL equivalence and FPGA RAM mapping demonstrated, latest-head CI required for merge.** This is a separate two-lane storage building block, NOT wired to P102 or the public command bus. Its purpose is to prove safe parallel bank accesses before the risky renderer integration.
 
 ## Actual architecture
 
@@ -16,9 +16,18 @@
 
 1. Independent indexed 48-bit golden software array with validity bits in real Icarus Verilog; execute 4x4, 7x5 (odd size and non-power-of-two index errors), and 8x8. Validate all responses, errors, writes/reads, long dual-bank streams, same-bank stalls/retries, invalid indices, and reset invalidation every accepting cycle.
 2. Require **500+ cycles of simultaneous dual-lane acceptance** and 1000+ total accepted operations, along with non-vacuous conflicting-bank and read/write coverage; no skips, no substituted mock clocks or seeded PASS messages.
-3. Map full P138 standalone research module through actual Yosys `synth_ecp5` and genuine nextpnr ECP5-85K `CABGA756` speed grade 6, fixed seed 1, `--freq 5`, unconstrained external pins. Reject unmapped primitives, latches, invalid utilization or missed target. Do not assert that this is inference of real FPGA block RAM unless mapping report explicitly confirms `DP16KD`.
+3. Map full P138 standalone research module through actual Yosys `synth_ecp5` and genuine nextpnr ECP5-85K `CABGA756` speed grade 6, fixed seed 1, `--freq 5`, unconstrained external pins. Reject unmapped primitives, latches, invalid utilization or missed target. **Require at least two real mapped `DP16KD` FPGA block RAM primitives**, rather than silently accepting LUT/FF-only storage.
 4. Rerun inherited P126–P137 workflows when file filters apply. No claims about global GPU throughput because integration is not yet present.
 5. Remain draft until **all P138 jobs on the same exact PR head** pass and concrete resource evidence is recorded.
+
+## Verified first results (2026-10-24)
+
+- Independent actual Icarus Verilog golden-array matrix passed on 4×4, 7×5 and 8×8. Simultaneous dual acceptance: **568**, **633**, **736** cycles respectively; total accepted operations **1,140**, **1,277**, **1,476**. All read/write payloads compared bitwise, with explicit conflict/retry and reset; the 7×5 case reported 3 invalid-address errors as expected.
+- The first synthesis version mapped zero ECP5 `DP16KD` cells, despite passing functional tests. It was **not considered a physically RAM-backed result**.
+- Refactoring to one explicitly selected synchronous read/write memory port **per bank**, with registered read responses, produced **4 actual mapped `DP16KD` cells** on the 4×4 `a0_p138_dual_bank_framebuffer` top. Genuine ECP5-85K place-and-route passed the 5 MHz internal target and reported **236.69 MHz** one-clock Fmax in the standalone research module at seed 1. This Fmax does **not** include P102 raster/depth/blend logic and therefore cannot be compared to P137's 50.44 MHz.
+- A new CI ratchet fails the latest PR head if fewer than two actual `DP16KD` cells are mapped. The latest documentation and workflow commits require revalidation before merge.
+
+The presence of RAM primitives and independent bank ports validates an FPGA research implementation, not on-board memory integrity, real dual-pixel raster throughput, a physical graphics card, or production multiported VRAM.
 
 ## Forward work
 
