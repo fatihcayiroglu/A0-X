@@ -1,5 +1,5 @@
 `timescale 1ns/1ps
-// P151 genuine 16-instruction shader research program execution vs
+// P151 genuine 16-instruction shader research golden_insns execution vs
 // independent scalar /255 and saturation oracle. Check RAW dependencies,
 // all 8 opcodes, 8 registers, partial masks, busy-write isolation,
 // exact retirement counts, invalid commands and reset-recovery.
@@ -15,7 +15,7 @@ module a0_p151_microprogram_tb;
   wire ready,busy,done,fault;
   wire [4:0] retired_count;
   reg [31:0] golden[0:7];
-  reg [23:0] program[0:15];
+  reg [23:0] golden_insns[0:15];
   integer programs_run=0,instructions_run=0,raw_hazards=0;
   integer ignored_busy_writes=0,bad_launches=0,read_checks=0;
   integer tick=0;
@@ -96,7 +96,7 @@ module a0_p151_microprogram_tb;
       insn_write_valid=1;
       @(posedge clk);
       @(negedge clk);insn_write_valid=0;
-      program[idx]=value;
+      golden_insns[idx]=value;
     end
   endtask
   task automatic check_regs;
@@ -120,7 +120,7 @@ module a0_p151_microprogram_tb;
     begin
       if(!ready || busy || fault)$fatal(1,"P151 engine not idle at launch");
       for(k=0;k<len;k=k+1)begin
-        instruction=program[k];
+        instruction=golden_insns[k];
         sb=instruction[2:0];sa=instruction[5:3];
         dst=instruction[8:6];op=instruction[11:9];
         mask=instruction[15:12];alpha=instruction[23:16];
@@ -177,14 +177,14 @@ module a0_p151_microprogram_tb;
       $fatal(1,"P151 vacuous dependency coverage runs=%0d retired=%0d hazards=%0d busy_wr=%0d read=%0d",
         programs_run,instructions_run,raw_hazards,ignored_busy_writes,read_checks);
 
-    // An empty program is a *latched* error, not silent success.
+    // An empty golden_insns is a *latched* error, not silent success.
     @(negedge clk);start_length=0;start=1;
     @(posedge clk);@(negedge clk);start=0;
     if(!fault || ready || busy || done)
-      $fatal(1,"P151 invalid zero-length program was accepted");
+      $fatal(1,"P151 invalid zero-length golden_insns was accepted");
     bad_launches=bad_launches+1;
     repeat(4)@(negedge clk);
-    if(!fault)$fatal(1,"P151 invalid program fault self-cleared");
+    if(!fault)$fatal(1,"P151 invalid golden_insns fault self-cleared");
 
     // Physical reset clears instruction memory, registers and errors.
     rst_n=0;
@@ -198,7 +198,7 @@ module a0_p151_microprogram_tb;
     wr_insn(0,{8'd255,4'hf,3'd7,3'd2,3'd0,3'd1});
     run(1,0);
 
-    // Concurrent launch and program update must fail closed.
+    // Concurrent launch and golden_insns update must fail closed.
     @(negedge clk);
     start=1;start_length=1;insn_write_valid=1;
     @(posedge clk);
@@ -212,5 +212,5 @@ module a0_p151_microprogram_tb;
       programs_run+1,instructions_run+1,raw_hazards,ignored_busy_writes,read_checks,bad_launches);
     $finish;
   end
-  initial begin #100000000;$fatal(1,"P151 program test watchdog");end
+  initial begin #100000000;$fatal(1,"P151 golden_insns test watchdog");end
 endmodule
