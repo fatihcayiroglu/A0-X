@@ -1,0 +1,54 @@
+name: A0-X P152 independent shader prepass P102 oracle
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p152_shaded_triangle_prepass.sv'
+      - 'A0-GPU/tests/rtl/a0_p152_shader_triangle_diff_tb.sv'
+      - '.github/workflows/a0-p152-independent-prepass.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p152_shaded_triangle_prepass.sv'
+      - '.github/workflows/a0-p152-independent-prepass.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real_shader_P102_oracle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Icarus HDL
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y iverilog
+      - name: Check actual P151 shader program into P145 BRAM vs P102
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P152-PREPASS
+          iverilog -g2012 -s a0_p152_shader_triangle_diff_tb \
+            -o EVIDENCE/P152-PREPASS/test.vvp \
+            A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv \
+            A0-GPU/rtl/shader/a0_p151_unorm_microprogram.sv \
+            A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv \
+            A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv \
+            A0-GPU/rtl/graphics/a0_p68_depth_compare.sv \
+            A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv \
+            A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv \
+            A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv \
+            A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv \
+            A0-GPU/rtl/graphics/a0_p145_dual_raster_depth_blend_trial.sv \
+            A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv \
+            A0-GPU/rtl/graphics/a0_p152_shaded_triangle_prepass.sv \
+            A0-GPU/tests/rtl/a0_p152_shader_triangle_diff_tb.sv \
+            2>&1 | tee EVIDENCE/P152-PREPASS/compile.log
+          timeout 120s vvp EVIDENCE/P152-PREPASS/test.vvp | tee EVIDENCE/P152-PREPASS/run.log
+          grep -q '^P152_SHADED_TRIANGLE_P102_PASS checked_pixels=16 shaded_draws=1 ' EVIDENCE/P152-PREPASS/run.log
+      - name: Upload logs on success or failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p152-independent-prepass-evidence
+          path: EVIDENCE/P152-PREPASS/
+          if-no-files-found: warn
