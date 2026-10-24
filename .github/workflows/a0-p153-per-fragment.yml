@@ -59,83 +59,64 @@ jobs:
               2>&1 | tee "EVIDENCE/P153/rtl/$id-compile.log"
             timeout 120s vvp "EVIDENCE/P153/rtl/$id.vvp" | tee "EVIDENCE/P153/rtl/$id.log"
             grep -q '^P153_REAL_PER_FRAGMENT_SHADER_P102_PASS ' "EVIDENCE/P153/rtl/$id.log"
-            iverilog -g2012 -s a0_p153_packed_fragment_p102_tb \\
-              -Pa0_p153_packed_fragment_p102_tb.FRAME_WIDTH="$w" \\
-              -Pa0_p153_packed_fragment_p102_tb.FRAME_HEIGHT="$h" \\
-              -o "EVIDENCE/P153/rtl/packed-$id.vvp" \\
-              A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv \\
-              A0-GPU/rtl/shader/a0_p151_unorm_microprogram.sv \\
-              A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv \\
-              A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv \\
-              A0-GPU/rtl/graphics/a0_p68_depth_compare.sv \\
-              A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv \\
-              A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv \\
-              A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv \\
-              A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv \\
-              A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv \\
-              A0-GPU/rtl/graphics/a0_p153_fragment_shader_trial.sv \\
-              A0-GPU/rtl/graphics/a0_p153_packed_fragment_command_top.sv \\
-              A0-GPU/tests/rtl/a0_p153_packed_fragment_p102_tb.sv \\
+            iverilog -g2012 -s a0_p153_packed_fragment_p102_tb \
+              -Pa0_p153_packed_fragment_p102_tb.FRAME_WIDTH="$w" \
+              -Pa0_p153_packed_fragment_p102_tb.FRAME_HEIGHT="$h" \
+              -o "EVIDENCE/P153/rtl/packed-$id.vvp" \
+              A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv \
+              A0-GPU/rtl/shader/a0_p151_unorm_microprogram.sv \
+              A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv \
+              A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv \
+              A0-GPU/rtl/graphics/a0_p68_depth_compare.sv \
+              A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv \
+              A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv \
+              A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv \
+              A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv \
+              A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv \
+              A0-GPU/rtl/graphics/a0_p153_fragment_shader_trial.sv \
+              A0-GPU/rtl/graphics/a0_p153_packed_fragment_command_top.sv \
+              A0-GPU/tests/rtl/a0_p153_packed_fragment_p102_tb.sv \
               2>&1 | tee "EVIDENCE/P153/rtl/packed-$id-compile.log"
             timeout 120s vvp "EVIDENCE/P153/rtl/packed-$id.vvp" | tee "EVIDENCE/P153/rtl/packed-$id.log"
             grep -q '^P153_PACKED_PIXEL_SHADER_P102_PASS ' "EVIDENCE/P153/rtl/packed-$id.log"
           done
-      - name: Require complete framebuffer, three distinct fragment programs and real stalls
+      - name: Strictly match P102 coverage, real shader invocations and full RGB/depth
         run: |
           python3 - <<'PY'
-          import json,re
           from pathlib import Path
+          import json,re
           p=Path('EVIDENCE/P153/rtl')
-          pat=r'^P153_REAL_PER_FRAGMENT_SHADER_P102_PASS size=(\d+)x(\d+) clears=(\d+) draws=(\d+) checked=(\d+) shader_invocations=(\d+) done=(\d+) host_stalls=(\d+)$'
+          direct=r'^P153_REAL_PER_FRAGMENT_SHADER_P102_PASS size=(\d+)x(\d+) clears=(\d+) draws=(\d+) checked=(\d+) shader_invocations=(\d+) done=(\d+) host_stalls=(\d+)$'
+          packed=r'^P153_PACKED_PIXEL_SHADER_P102_PASS size=(\d+)x(\d+) pixels=(\d+) covered=(\d+) bus_txns=(\d+) rejected=(\d+) shader_invocations=(\d+)$'
           results={}
           for shape,pixels in [('4x4',16),('7x5',35),('8x8',64)]:
               log=(p/f'{shape}.log').read_text()
-              rows=re.findall(pat,log,re.M)
+              rows=re.findall(direct,log,re.M)
               assert len(rows)==1,(shape,log[-300:])
               w,h,c,d,checks,inv,done,stall=map(int,rows[0])
               assert f'{w}x{h}'==shape and c==3 and d==3
               assert checks>=6*pixels and inv>=5 and done>=inv and stall>=1
-              packed=(p/f'packed-{shape}.log').read_text()
-              rows2=re.findall(r'^P153_PACKED_PIXEL_SHADER_P102_PASS size=(\\d+)x(\\d+) pixels=(\\d+) covered=(\\d+) bus_txns=(\\d+) rejected=(\\d+) shader_invocations=(\\d+)
-                'independent_P102_covered_pixels_and_shader_invocations':inv,
-                'actual_P151_shader_completions':done,
-                'host_stall_cycles':stall}
+              bus=(p/f'packed-{shape}.log').read_text()
+              records=re.findall(packed,bus,re.M)
+              assert len(records)==1,(shape,bus[-300:])
+              pw,ph,pr,pc,bustx,errors,pinv=map(int,records[0])
+              assert f'{pw}x{ph}'==shape and pr==pixels
+              assert pc==pinv and pc>=4 and bustx>=4*pixels and errors>=6
+              results[shape]={'direct_frame_RGB_depth_checks':checks,
+                  'actual_direct_shader_completions':done,
+                  'direct_covered_fragment_invocations':inv,
+                  'packed_frame_shader_invocations':pinv,
+                  'packed_host_transactions':bustx,'packed_errors':errors}
           (p/'qualification.json').write_text(json.dumps({
-            'milestone':'P153','status':'PASS','actual_P151_once_per_covered_pixel':True,
-            'P102_coverage_independent_scalar_color':True,
-            'three_framebuffer_shapes':results,
-            'routed_ECP5_qualification':False,
-            'real_GPGPU_compiler_or_FPS':False
+            'milestone':'P153','status':'PASS',
+            'real_P151_per_covered_fragment':True,
+            'independent_P102_coverage_and_scalar_RGB':True,
+            'full_frame_shape_results':results,
+            'physical_board_or_real_gpu_fps':False
           },indent=2))
-          print('P153_PER_FRAGMENT_SHADER_CORRECTNESS_PASS real RTL no skips')
+          print('P153_INDEPENDENT_PER_FRAGMENT_AND_PACKED_P102_PASS')
           PY
-      - name: Save complete HDL tests and comparison evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: p153-real-fragment-shader-rtl-evidence
-          path: EVIDENCE/P153/rtl/
-          if-no-files-found: warn
-,packed,re.M)
-              assert len(rows2)==1,(shape,packed[-300:])
-              pw,ph,pr,pc,pbus,perr,pinv=map(int,rows2[0])
-              assert f'{pw}x{ph}'==shape and pr==pixels and pc==pinv and pc>=4
-              assert pbus>=4*pixels and perr>=6
-              results[shape]={'packed_bus_transactions':pbus,'packed_shader_invocations':pinv,
-                'RGB_depth_pixel_comparisons':checks,
-                'independent_P102_covered_pixels_and_shader_invocations':inv,
-                'actual_P151_shader_completions':done,
-                'host_stall_cycles':stall}
-          (p/'qualification.json').write_text(json.dumps({
-            'milestone':'P153','status':'PASS','actual_P151_once_per_covered_pixel':True,
-            'P102_coverage_independent_scalar_color':True,
-            'three_framebuffer_shapes':results,
-            'routed_ECP5_qualification':False,
-            'real_GPGPU_compiler_or_FPS':False
-          },indent=2))
-          print('P153_PER_FRAGMENT_SHADER_CORRECTNESS_PASS real RTL no skips')
-          PY
-      - name: Save complete HDL tests and comparison evidence
+      - name: Save actual per-fragment RTL evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
