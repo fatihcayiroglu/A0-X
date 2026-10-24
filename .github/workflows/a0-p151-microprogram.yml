@@ -1,0 +1,145 @@
+name: A0-X P151 sequential UNORM shader programs and real ECP5
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv'
+      - 'A0-GPU/rtl/shader/a0_p151_unorm_microprogram.sv'
+      - 'A0-GPU/tests/rtl/a0_p151_microprogram_tb.sv'
+      - 'A0-GPU/docs/P151-UNORM-MICROPROGRAM.md'
+      - '.github/workflows/a0-p151-microprogram.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/shader/a0_p151_unorm_microprogram.sv'
+      - 'A0-GPU/tests/rtl/a0_p151_microprogram_tb.sv'
+      - '.github/workflows/a0-p151-microprogram.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p151-real-sequential-shader-RTL:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Icarus
+        run: |
+          set -euo pipefail
+          if ! timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog; then
+            timeout 240s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog
+          fi
+          iverilog -V | head -2
+      - name: Run actual 8-register 16-instruction sequential shader programs
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P151/rtl
+          iverilog -g2012 -s a0_p151_microprogram_tb \
+            -o EVIDENCE/P151/rtl/program.vvp \
+            A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv \
+            A0-GPU/rtl/shader/a0_p151_unorm_microprogram.sv \
+            A0-GPU/tests/rtl/a0_p151_microprogram_tb.sv \
+            2>&1 | tee EVIDENCE/P151/rtl/compile.log
+          timeout 120s vvp EVIDENCE/P151/rtl/program.vvp | tee EVIDENCE/P151/rtl/program.log
+          grep -q '^P151_UNORM_SHADER_MICROPROGRAM_PASS ' EVIDENCE/P151/rtl/program.log
+      - name: Strict retired count, RAW, busy-time mutation and reset gates
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,re
+          p=Path('EVIDENCE/P151/rtl')
+          data=(p/'program.log').read_text()
+          pattern=r'^P151_UNORM_SHADER_MICROPROGRAM_PASS programs=(\d+) retired=(\d+) RAW_checks=(\d+) ignored_busy_writes=(\d+) readback_checks=(\d+) fail_closed_launches=(\d+) register_count=(\d+) instruction_slots=(\d+)$'
+          rec=re.findall(pattern,data,re.M)
+          assert len(rec)==1,(rec,data[-400:])
+          progs,retired,raw,busy,reads,invalid,reg,slots=map(int,rec[0])
+          assert progs==52 and retired==793 and raw>=700
+          assert busy>=9 and reads>=400 and invalid==2
+          assert reg==8 and slots==16
+          (p/'qualification.json').write_text(json.dumps({
+             'milestone':'P151','status':'PASS','real_iverilog':True,
+             'actual_P150_vector_ALU_integrated':True,
+             'scalar_integer_golden_oracle':True,'shader_programs':progs,
+             'retired_instructions':retired,'read_after_write_dependencies':raw,
+             'ignored_busy_writes':busy,'golden_register_reads':reads,
+             'fail_closed_launches':invalid,
+             'real_GPU_shader_compiler_or_raster_attach':False
+          },indent=2))
+          print('P151_PROGRAM_SEQUENCER_RTL_PASS real shader primitive integration')
+          PY
+      - name: Upload full test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p151-real-microprogram-RTL
+          path: EVIDENCE/P151/rtl/
+          if-no-files-found: warn
+  p151-real-ECP5-program-engine:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install genuine FPGA synthesis and route tools
+        run: |
+          set -euo pipefail
+          if ! timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5; then
+            timeout 300s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5
+          fi
+          yosys -V
+          nextpnr-ecp5 --version
+      - name: Synthesize P151 16x24 program + 8x32 regs and genuine SIMD4 ALU
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P151/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv A0-GPU/rtl/shader/a0_p151_unorm_microprogram.sv; hierarchy -check -top a0_p151_unorm_microprogram; synth_ecp5 -top a0_p151_unorm_microprogram -json EVIDENCE/P151/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P151/route/yosys.log
+      - name: Route real ECP5-85K CABGA756 speed6 5MHz research clock
+        run: |
+          set -euo pipefail
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P151/route/netlist.json \
+            --textcfg EVIDENCE/P151/route/route.config \
+            --report EVIDENCE/P151/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P151/route/nextpnr.log
+      - name: Enforce actual mapped ALU DSP, program FFs, no unbound cells and timing
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,collections
+          p=Path('EVIDENCE/P151/route')
+          top=json.loads((p/'netlist.json').read_text())['modules']['a0_p151_unorm_microprogram']
+          pins=sum(len(v['bits']) for v in top['ports'].values())
+          assert pins==117,('P151 instruction/register I/O contract changed',pins)
+          c=collections.Counter(x['type'] for x in top['cells'].values())
+          assert c.get('LUT4',0)>=80,('Missing real ALU/control LUT mapping',c)
+          assert c.get('MULT18X18D',0)>=4,('P150 actual UNORM multiply vanished',c)
+          assert c.get('TRELLIS_FF',0)>=200,('Microprogram/register state missing',c)
+          assert not any(k.startswith('$') or k.startswith('a0_') or 'LATCH' in k.upper() for k in c),c
+          route=json.loads((p/'route.json').read_text())
+          for kind in ('TRELLIS_IO','TRELLIS_COMB','TRELLIS_FF'):
+              u=route['utilization'][kind]
+              assert 0<u['used']<=u['available'],(kind,u)
+          clocks=route['fmax']
+          assert clocks and any('clk' in k for k in clocks)
+          for name,v in clocks.items():
+              assert v['constraint']>=5 and v['achieved']>=v['constraint'],(name,v)
+          (p/'qualification.json').write_text(json.dumps({
+            'milestone':'P151','status':'PASS','genuine_ECP5_route':True,
+            'external_logical_io_bits':pins,'program_slots':16,'vector_registers':8,
+            'LUT4':c['LUT4'],'DSP_MULT18X18D':c['MULT18X18D'],
+            'TRELLIS_FF':c['TRELLIS_FF'],'tool_Fmax':clocks,
+            'real_PCIe_or_FP32_shader':False,'board_tested':False
+          },indent=2))
+          print('P151_REAL_ECP5_SHADER_MICROPROGRAM_PASS actual P150 ALU plus sequencer')
+          print('P151_MAPPED_FF',c['TRELLIS_FF'])
+          print('P151_MAPPED_DSP',c['MULT18X18D'])
+          for k,v in clocks.items():print('P151_TOOL_FMAX_MHZ',v['achieved'])
+          PY
+      - name: Upload genuine FPGA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p151-real-program-engine-ecp5
+          path: EVIDENCE/P151/route/
+          if-no-files-found: warn
