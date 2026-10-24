@@ -1,7 +1,8 @@
 `timescale 1ns/1ps
 // P153: 76-pin research bus to real P151 shader microprogram per P38
 // COVERED pixel. R2 RGB flows into P144 real single-lane BRAM RMW.
-// No scissor config yet; mode bit4 is rejected rather than ignored.
+// P154: existing scissor XY/WH registers and MODE bit4 now gate
+// P38 covered pixels BEFORE shader invocation and RMW.
 // Deliberately not PCIe, AXI, clock-domain crossing or physical pinout.
 // Accepted requests receive one response; host pixel reads wait for the
 // actual registered BRAM response. Clear/draw are asynchronous commands:
@@ -94,6 +95,9 @@ module a0_p153_packed_fragment_command_top #(
     .shaded_pixels(shaded_pixels),
     .depth_compare_op(depth_op_q),.depth_write(depth_write_q),
     .blend_enable(blend_q),.source_alpha(alpha_q),
+    .scissor_enable(scissor_enable_q),
+    .scissor_x(scissor_x_q),.scissor_y(scissor_y_q),
+    .scissor_w(scissor_w_q),.scissor_h(scissor_h_q),
     .initialized(core_initialized),.busy(core_busy),.fault(core_fault),
     .pixel_writes(core_pixel_writes),
     .host_read_valid(host_request),.host_read_ready(core_host_ready),
@@ -152,7 +156,7 @@ module a0_p153_packed_fragment_command_top #(
               scissor_w_q<=req_wdata[15:0];scissor_h_q<=req_wdata[31:16];
             end
             REG_MODE:begin
-              if(req_wdata[31:16]!=16'd0 || req_wdata[7:4]!=4'd0)
+              if(req_wdata[31:16]!=16'd0 || req_wdata[7:5]!=3'd0)
                 rsp_error<=1;
               else begin
                 depth_op_q<=req_wdata[1:0];
