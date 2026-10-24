@@ -235,8 +235,13 @@ module a0_p142_dual_opaque_raster_tb #(
         repeat(3)@(negedge clk);
         rst_n=0;
         repeat(4)@(negedge clk);
-        if(dut_initialized || ref_initialized || dut_busy || ref_busy)
-            $fatal(1,"P142 reset left renderer initialized or busy");
+        // Legacy P102 intentionally has busy=1 while rst_n=0 because
+        // its raster_ready is reset-gated; P142 busy only denotes an
+        // active transfer. Reset contracts differ, but neither may stay
+        // initialized or report a pending completion after reset.
+        if(dut_initialized || ref_initialized || dut_tri_done || ref_tri_done ||
+           dut_clear_done || ref_clear_done || dut_busy)
+            $fatal(1,"P142 reset left initialized, done or active transaction");
         rst_n=1;
         clear_both(24'h010203,24'hffffff);
         x0=-16'sd16;y0=-16'sd16;
