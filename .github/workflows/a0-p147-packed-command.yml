@@ -1,0 +1,196 @@
+name: A0-X P147 full16 packed command port, P102 oracle and ECP5
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p147_packed_command_top.sv'
+      - 'A0-GPU/tests/rtl/a0_p147_command_p102_diff_tb.sv'
+      - 'A0-GPU/docs/P147-PACKED-COMMAND-PORT.md'
+      - '.github/workflows/a0-p147-packed-command.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p147_packed_command_top.sv'
+      - 'A0-GPU/tests/rtl/a0_p147_command_p102_diff_tb.sv'
+      - '.github/workflows/a0-p147-packed-command.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p147-real-bus-vs-p102:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install genuine Icarus HDL
+        run: |
+          set -euo pipefail
+          if ! timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog; then
+            timeout 240s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog
+          fi
+          iverilog -V | head -2
+      - name: Actual packed 32bit bus full 16bit vertices against unchanged P102
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P147/rtl
+          for shape in '4 4' '7 5' '8 8'; do
+            read -r w h <<< "$shape"
+            id="${w}x${h}"
+            iverilog -g2012 -s a0_p147_command_p102_diff_tb \
+              -Pa0_p147_command_p102_diff_tb.FRAME_WIDTH="$w" \
+              -Pa0_p147_command_p102_diff_tb.FRAME_HEIGHT="$h" \
+              -o "EVIDENCE/P147/rtl/$id.vvp" \
+              A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv \
+              A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv \
+              A0-GPU/rtl/graphics/a0_p68_depth_compare.sv \
+              A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv \
+              A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv \
+              A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv \
+              A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv \
+              A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv \
+              A0-GPU/rtl/graphics/a0_p145_dual_raster_depth_blend_trial.sv \
+              A0-GPU/rtl/graphics/a0_p147_packed_command_top.sv \
+              A0-GPU/tests/rtl/a0_p147_command_p102_diff_tb.sv \
+              2>&1 | tee "EVIDENCE/P147/rtl/$id-compile.log"
+            timeout 120s vvp "EVIDENCE/P147/rtl/$id.vvp" | tee "EVIDENCE/P147/rtl/$id.log"
+            grep -q '^P147_FULL16_PACKED_BUS_P102_PASS ' "EVIDENCE/P147/rtl/$id.log"
+          done
+      - name: Enforce non-vacuous full-range vertex and complete pixel comparisons
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,re
+          root=Path('EVIDENCE/P147/rtl')
+          pattern=r'^P147_FULL16_PACKED_BUS_P102_PASS size=(\d+)x(\d+) clears=(\d+) draws=(\d+) large_vertices=(\d+) frame_pixels_checked=(\d+) bus_txns=(\d+) rejected=(\d+) dual_commits=(\d+)$'
+          data={}
+          for shape,pixels in [('4x4',16),('7x5',35),('8x8',64)]:
+              txt=(root/f'{shape}.log').read_text()
+              rows=re.findall(pattern,txt,re.M)
+              assert len(rows)==1,(shape,txt[-350:])
+              w,h,clears,draws,wide,compared,packets,rejected,dual=map(int,rows[0])
+              assert f'{w}x{h}'==shape
+              assert clears==2 and draws==5 and wide>=4
+              assert compared>=7*pixels and packets>=7*pixels*4
+              assert rejected>=15 and dual>=1
+              data[shape]={'pixels':pixels,'frame_pixel_checks':compared,
+                'packets':packets,'rejected_invalid':rejected,
+                'full_signed_16bit_vertices':wide,'two_bank_commit_cycles':dual}
+          (root/'qualification.json').write_text(json.dumps({
+              'status':'PASS','milestone':'P147','genuine_iverilog':True,
+              'real_P102_reference_and_full_P145_P144_P139_P138':True,
+              'wide_signed_16bit_vertex_draws':True,'shapes':data,
+              'real_PCIe_or_board':False
+          },indent=2))
+          print('P147_FULL16_32BIT_COMMAND_P102_ORACLE_PASS three complete frame shapes')
+          PY
+      - name: Rerun inherited P145 and P146 real Icarus matrices on identical PR head
+        run: |
+          set -euo pipefail
+          sources=(
+            A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv
+            A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv
+            A0-GPU/rtl/graphics/a0_p68_depth_compare.sv
+            A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv
+            A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv
+            A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv
+            A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv
+            A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv
+            A0-GPU/rtl/graphics/a0_p145_dual_raster_depth_blend_trial.sv
+          )
+          for shape in '4 4' '7 5' '8 8'; do
+            read -r w h <<< "$shape"
+            id="${w}x${h}"
+            iverilog -g2012 -s a0_p145_dual_raster_depth_blend_diff_tb \
+              -Pa0_p145_dual_raster_depth_blend_diff_tb.FRAME_WIDTH="$w" \
+              -Pa0_p145_dual_raster_depth_blend_diff_tb.FRAME_HEIGHT="$h" \
+              -o "EVIDENCE/P147/rtl/p145-$id.vvp" \
+              "${sources[@]}" A0-GPU/tests/rtl/a0_p145_dual_raster_depth_blend_diff_tb.sv \
+              2>&1 | tee "EVIDENCE/P147/rtl/p145-$id-compile.log"
+            timeout 120s vvp "EVIDENCE/P147/rtl/p145-$id.vvp" | tee "EVIDENCE/P147/rtl/p145-$id.log"
+            grep -q '^P145_RASTER_BRAM_FRAME_EQUIVALENCE_PASS ' "EVIDENCE/P147/rtl/p145-$id.log"
+            iverilog -g2012 -s a0_p146_pair_lookahead_ab_tb \
+              -Pa0_p146_pair_lookahead_ab_tb.FRAME_WIDTH="$w" \
+              -Pa0_p146_pair_lookahead_ab_tb.FRAME_HEIGHT="$h" \
+              -o "EVIDENCE/P147/rtl/p146-$id.vvp" \
+              "${sources[@]}" A0-GPU/tests/rtl/a0_p145_pre_p146_reference.sv \
+              A0-GPU/tests/rtl/a0_p146_pair_lookahead_ab_tb.sv \
+              2>&1 | tee "EVIDENCE/P147/rtl/p146-$id-compile.log"
+            timeout 120s vvp "EVIDENCE/P147/rtl/p146-$id.vvp" | tee "EVIDENCE/P147/rtl/p146-$id.log"
+            grep -q '^P146_PAIR_LOOKAHEAD_AB_PASS ' "EVIDENCE/P147/rtl/p146-$id.log"
+          done
+          echo P147_P145_P146_SAME_HEAD_REAL_RTL_REGRESSIONS_PASS
+      - name: Always upload bus/frame/regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p147-genuine-command-and-p102-evidence
+          path: EVIDENCE/P147/rtl/
+          if-no-files-found: warn
+  p147-full-16bit-command-ecp5:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual Yosys and nextpnr ECP5
+        run: |
+          set -euo pipefail
+          if ! timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5; then
+            timeout 300s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5
+          fi
+          yosys -V
+          nextpnr-ecp5 --version
+      - name: Synthesize entire packed full-coordinate triangle/RMW/BRAM pipeline
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P147/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv A0-GPU/rtl/graphics/a0_p145_dual_raster_depth_blend_trial.sv A0-GPU/rtl/graphics/a0_p147_packed_command_top.sv; hierarchy -check -top a0_p147_packed_command_top -chparam FRAME_WIDTH 4 -chparam FRAME_HEIGHT 4; synth_ecp5 -top a0_p147_packed_command_top -json EVIDENCE/P147/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P147/route/yosys.log
+      - name: Place and route actual narrow-pin ECP5-85K model
+        run: |
+          set -euo pipefail
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P147/route/netlist.json \
+            --textcfg EVIDENCE/P147/route/route.config \
+            --report EVIDENCE/P147/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P147/route/nextpnr.log
+      - name: Assert narrow actual IO count, real BRAM, timing, complete resources
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import collections,json
+          p=Path('EVIDENCE/P147/route')
+          top=json.loads((p/'netlist.json').read_text())['modules']['a0_p147_packed_command_top']
+          io=sum(len(v['bits']) for v in top['ports'].values())
+          assert io==76,('P147 register transport pin contract changed',io)
+          cells=collections.Counter(v['type'] for v in top['cells'].values())
+          assert cells.get('DP16KD',0)>=2, 'Full raster must use real ECP5 FPGA BRAM'
+          assert not any(k.startswith('$') or k.startswith('a0_') or 'LATCH' in k.upper() for k in cells),cells
+          route=json.loads((p/'route.json').read_text())
+          assert route['utilization']['TRELLIS_IO']['used']<=96
+          for kind in ('TRELLIS_IO','TRELLIS_COMB'):
+              used=route['utilization'][kind]
+              assert 0<used['used']<=used['available'],(kind,used)
+          clocks=route['fmax']
+          assert clocks and any('clk' in k for k in clocks)
+          for k,v in clocks.items():
+              assert v['constraint']>=5 and v['achieved']>=v['constraint'],(k,v)
+          (p/'qualification.json').write_text(json.dumps({
+             'milestone':'P147','status':'PASS','genuine_ecp5_full_pipeline':True,
+             'exposed_port_bits':io,'baseline_P145_bounded_pin_bits':318,
+             'signed_vertex_bits_each':16,'DP16KD':cells['DP16KD'],
+             'mapped_cells':sum(cells.values()),'routing_fmax_MHz':clocks,
+             'physical_pin_constraints':False,'PCIe':False,'board_measured':False
+          },indent=2))
+          print('P147_76_PIN_FULL16_RASTER_ECP5_PASS actual complete research PnR')
+          print('P147_REAL_DP16KD',cells['DP16KD'])
+          print('P147_IO_REDUCTION',318,'->',io)
+          for key,data in clocks.items():print('P147_TOOL_RESEARCH_FMAX_MHZ',data['achieved'])
+          PY
+      - name: Always upload real Yosys/nextpnr reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p147-ecp5-bounded-port-evidence
+          path: EVIDENCE/P147/route/
+          if-no-files-found: warn
