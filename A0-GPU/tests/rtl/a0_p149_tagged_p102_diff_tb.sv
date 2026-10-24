@@ -47,7 +47,7 @@ module a0_p149_tagged_p102_diff_tb #(
   a0_triangle_scissor_depth_blend_p102 #(
     .FRAME_WIDTH(FRAME_WIDTH),.FRAME_HEIGHT(FRAME_HEIGHT)
   ) reference(
-    .clk(clk),.rst_n(rst_n),.link_reset(link_reset),.link_fault(link_fault),
+    .clk(clk),.rst_n(rst_n),
     .clear_valid(launch_clear),.clear_ready(ref_clear_ready),
     .clear_color(ref_clear_color),.clear_depth(ref_clear_depth),
     .clear_done(ref_clear_done),
