@@ -122,35 +122,7 @@ jobs:
           counts=collections.Counter(v['type'] for v in top['cells'].values())
           assert counts
           assert counts.get('DP16KD',0)>=2, 'P138 requires at least two real ECP5 block RAM primitives'
-          assert not any(t.startswith('
-          route=json.loads((p/'route.json').read_text())
-          for kind in ('TRELLIS_COMB','TRELLIS_IO'):
-              util=route['utilization'][kind]
-              assert 0<util['used']<=util['available'],kind
-          clocks=route['fmax']
-          assert any('clk' in name for name in clocks)
-          for name,c in clocks.items():
-              assert c['constraint']>=5 and c['achieved']>=c['constraint'],(name,c)
-          result={'milestone':'P138','status':'PASS',
-                  'actual_ecp5_synthesis_and_pnr':True,'top_io_bits':io,
-                  'mapped_cell_count':sum(counts.values()),'cell_types':counts,
-                  'reported_fmax':clocks,
-                  'onboard_RAM_inference_confirmed':counts.get('DP16KD',0)>=2,
-                  'physical_IO_and_board_qualified':False,
-                  'P102_renderer_integrated':False,
-                  'real_GPU_pixel_throughput_measured':False}
-          (p/'qualification.json').write_text(json.dumps(result,indent=2))
-          print('P138_ECP5_DUAL_BANK_FIT_PASS mapped banked RTL only; NOT a physical GPU')
-          print('P138_REAL_ECP5_RAM_PRIMITIVES',counts.get('DP16KD',0))
-          PY
-      - name: Upload mapped netlist, timing, and resource evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: a0-p138-real-ecp5-fit
-          path: EVIDENCE/P138/route/
-          if-no-files-found: warn
-) or t.startswith('a0_') or 'LATCH' in t.upper() for t in counts), counts
+          assert not any(t.startswith('$') or t.startswith('a0_') or 'LATCH' in t.upper() for t in counts), counts
           route=json.loads((p/'route.json').read_text())
           for kind in ('TRELLIS_COMB','TRELLIS_IO'):
               util=route['utilization'][kind]
