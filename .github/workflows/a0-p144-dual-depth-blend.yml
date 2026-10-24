@@ -1,0 +1,159 @@
+name: A0-X P144 two-bank depth and alpha RMW real RTL + ECP5
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv'
+      - 'A0-GPU/tests/rtl/a0_p144_dual_depth_blend_tb.sv'
+      - 'A0-GPU/docs/P144-DUAL-DEPTH-BLEND-RMW.md'
+      - '.github/workflows/a0-p144-dual-depth-blend.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv'
+      - 'A0-GPU/tests/rtl/a0_p144_dual_depth_blend_tb.sv'
+      - '.github/workflows/a0-p144-dual-depth-blend.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p144-independent-depth-alpha-oracle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual Icarus Verilog
+        run: |
+          set -euo pipefail
+          if ! timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog; then
+            timeout 240s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog
+          fi
+          iverilog -V | head -2
+      - name: Real 2-lane BRAM RMW versus independent color/depth golden framebuffer
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P144/rtl
+          for shape in '4 4' '7 5' '8 8' '32 32'; do
+            read -r w h <<< "$shape"
+            id="${w}x${h}"
+            iverilog -g2012 -s a0_p144_dual_depth_blend_tb \
+              -Pa0_p144_dual_depth_blend_tb.FRAME_WIDTH="$w" \
+              -Pa0_p144_dual_depth_blend_tb.FRAME_HEIGHT="$h" \
+              -o "EVIDENCE/P144/rtl/$id.vvp" \
+              A0-GPU/rtl/graphics/a0_p68_depth_compare.sv \
+              A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv \
+              A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv \
+              A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv \
+              A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv \
+              A0-GPU/tests/rtl/a0_p144_dual_depth_blend_tb.sv \
+              2>&1 | tee "EVIDENCE/P144/rtl/$id-compile.log"
+            timeout 120s vvp "EVIDENCE/P144/rtl/$id.vvp" | tee "EVIDENCE/P144/rtl/$id.log"
+            grep -q '^P144_DUAL_DEPTH_BLEND_GOLDEN_PASS ' "EVIDENCE/P144/rtl/$id.log"
+          done
+      - name: Ratchet exact full-frame comparisons and nonvacuous depth/alpha paths
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,re
+          p=Path('EVIDENCE/P144/rtl')
+          pattern=r'^P144_DUAL_DEPTH_BLEND_GOLDEN_PASS size=(\d+)x(\d+) ops=(\d+) dual_ops=(\d+) dual_commits=(\d+) collisions=(\d+) invalid=(\d+) rejects=(\d+) blend=(\d+) reads=(\d+)$'
+          matrix={}
+          for shape,pixels in [('4x4',16),('7x5',35),('8x8',64),('32x32',1024)]:
+              log=(p/f'{shape}.log').read_text()
+              records=re.findall(pattern,log,re.M)
+              assert len(records)==1,(shape,records,log[-200:])
+              w,h,ops,dual_ops,dual_commits,conflicts,invalid,rejects,blend,reads=map(int,records[0])
+              assert f'{w}x{h}'==shape
+              assert ops>=450 and dual_ops>=300 and dual_commits>=3
+              assert conflicts>=32 and invalid>=64 and rejects>=10
+              assert blend>=100 and reads>=pixels*4
+              matrix[shape]={'accepted_or_rejected_packets':ops,
+                'accepted_dual_lane_packets':dual_ops,
+                'dual_pixel_commits':dual_commits,
+                'atomic_same_bank_rejections':conflicts,
+                'atomic_invalid_rejections':invalid,
+                'depth_rejections':rejects,
+                'blend_packets':blend,
+                'full_pixel_readbacks':reads}
+          (p/'qualification.json').write_text(json.dumps({
+              'milestone':'P144','status':'PASS',
+              'real_iverilog_and_real_p139_p138':True,
+              'independent_full_frame_oracle':True,
+              'p143_raster_connected':False,'physical_board_tested':False,
+              'matrix':matrix
+          },indent=2))
+          print('P144_REAL_DUAL_DEPTH_BLEND_ORACLE_PASS all 4 framebuffer geometries')
+          PY
+      - name: Upload simulation and oracle logs even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p144-dual-rmw-rtl-evidence
+          path: EVIDENCE/P144/rtl/
+          if-no-files-found: warn
+  p144-full-ecp5-ram-fit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install genuine Yosys and nextpnr
+        run: |
+          set -euo pipefail
+          if ! timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5; then
+            timeout 300s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5
+          fi
+          yosys -V
+          nextpnr-ecp5 --version
+      - name: Genuine technology synthesis of both depth/alpha lanes and bank RAM
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P144/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv; hierarchy -check -top a0_p144_dual_depth_blend_rmw -chparam FRAME_WIDTH 4 -chparam FRAME_HEIGHT 4; synth_ecp5 -top a0_p144_dual_depth_blend_rmw -json EVIDENCE/P144/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P144/route/yosys.log
+      - name: Place and route full P144 standalone on ECP5-85K
+        run: |
+          set -euo pipefail
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P144/route/netlist.json \
+            --textcfg EVIDENCE/P144/route/route.config \
+            --report EVIDENCE/P144/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P144/route/nextpnr.log
+      - name: Require actual two-bank BRAM, no unmapped cells and full timing
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,collections
+          p=Path('EVIDENCE/P144/route')
+          m=json.loads((p/'netlist.json').read_text())['modules']['a0_p144_dual_depth_blend_rmw']
+          io=sum(len(v['bits']) for v in m['ports'].values())
+          assert 0<io<=384,io
+          counts=collections.Counter(c['type'] for c in m['cells'].values())
+          assert counts.get('DP16KD',0)>=2, 'P144 actual FPGA block RAMs absent'
+          assert not any(t.startswith('$') or t.startswith('a0_') or 'LATCH' in t.upper() for t in counts), counts
+          route=json.loads((p/'route.json').read_text())
+          for k in ('TRELLIS_IO','TRELLIS_COMB'):
+              u=route['utilization'][k]
+              assert 0<u['used']<=u['available'],(k,u)
+          clocks=route['fmax']
+          assert clocks and any('clk' in k for k in clocks)
+          for k,v in clocks.items():
+              assert v['constraint']>=5 and v['achieved']>=v['constraint'],(k,v)
+          result={'milestone':'P144','status':'PASS',
+            'true_ECP5_85K_synthesis_and_route':True,
+            'mapped_DP16KD':counts['DP16KD'],'mapped_cell_count':sum(counts.values()),
+            'top_io_bits':io,'tool_reported_Fmax':clocks,
+            'P143_raster_integrated':False,'physical_board_tested':False,
+            'real_GPU_game_FPS':False}
+          (p/'qualification.json').write_text(json.dumps(result,indent=2))
+          print('P144_DUAL_RMW_ECP5_PASS two depth and RGB units on real FPGA banks')
+          print('P144_DP16KD',counts['DP16KD'])
+          for k,v in clocks.items():print('P144_STANDALONE_FMAX_MHZ',v['achieved'])
+          PY
+      - name: Upload exact mapping and route reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p144-dual-rmw-ecp5-evidence
+          path: EVIDENCE/P144/route/
+          if-no-files-found: warn
