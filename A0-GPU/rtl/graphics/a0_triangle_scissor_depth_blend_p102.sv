@@ -69,7 +69,7 @@ module a0_triangle_scissor_depth_blend_p102 #(
         else if (!raster_ready) begin
             // P38 consumes exactly one scan coordinate per active clock
             // because pixel_ready is tied high at its instantiation.
-            if (raster_x == FRAME_WIDTH - 1 && raster_y == FRAME_HEIGHT - 1)
+            if (scan_index_q == ADDR_BITS'(PIXELS - 1))
                 scan_index_q <= '0;
             else
                 scan_index_q <= scan_index_q + 1'b1;
