@@ -49,6 +49,8 @@ module a0_p153_fragment_shader_p102_tb #(
     .tri_depth(tri_depth),.depth_compare_op(depth_compare_op),
     .depth_write(depth_write),.blend_enable(blend_enable),
     .source_alpha(source_alpha),
+    .scissor_enable(1'b0),.scissor_x(16'd0),.scissor_y(16'd0),
+    .scissor_w(16'd0),.scissor_h(16'd0),
     .shader_program_length(shader_program_length),
     .shader_reg_write_valid(shader_reg_write_valid),
     .shader_reg_write_index(shader_reg_write_index),
