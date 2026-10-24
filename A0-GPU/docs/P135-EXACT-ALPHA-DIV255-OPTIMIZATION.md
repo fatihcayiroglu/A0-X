@@ -1,6 +1,6 @@
 # P135 — exact alpha-blend divide-by-255 optimization
 
-Status: **draft; not merged or performance qualified until CI passes.** Based on P134 main merge `317019e3`.
+Status: **research RTL and ECP5 mapping verified on P135 code commit `f2faac64`; PR #10 awaiting final exact-head green CI before merge.** Based on P134 main merge `317019e3`.
 
 ## Reproducible diagnosis
 
@@ -27,6 +27,12 @@ This removes 3 explicit constant-divide operations in the P70 RTL without alteri
 3. Re-run inherited actual P126/P127/P132/P133/P134 workflows on the exact proposed head: all must be green.
 4. Re-map the full P133/P132/P102 pipeline through actual Yosys and route the ECP5-85K with the **same** configuration as P134. Record both domain frequencies and fail if the GPU achieved Fmax is below the previous 9.77 MHz baseline. This comparison is diagnostic only: a small test FPGA, not real throughput or silicon clock qualification.
 5. Keep PR draft and do not merge on skipped/failed or absent evidence. Further pipelining will be considered separately because it affects raster completion, read-after-write correctness and pixel ordering.
+
+## First routed optimization result (2026-10-24)
+
+The full P135 code commit `f2faac64` passed its dedicated equivalence and same-device ECP5 placement/routing gates. The deterministic nextpnr report (ECP5-85K CABGA756, speed 6, seed 1, 4x4 internal framebuffer, 5 MHz timing threshold, unconstrained external pins) reports **GPU Fmax 36.50 MHz vs P134 baseline 9.77 MHz**, about **3.74x**. Host reported Fmax is 155.79 MHz vs 84.85 MHz. Initial timing estimations differed; these are the final post-route figures. The P126, P127, P129, P131, P132 and P134 workflows also passed for code commit `f2faac64`.
+
+These are **static tool predictions for a research FPGA mapped model**, not benchmark FPS, a manufactured GPU, an external timing signoff, or guaranteed hardware frequency. No performance gain for WolfOS, games or an actual PCIe device is implied. The final documentation commit must independently pass CI before merge.
 
 ## Out of scope
 
