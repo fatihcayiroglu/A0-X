@@ -1,0 +1,151 @@
+name: A0-X P140 actual raster-to-BRAM frame differential and ECP5
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p140_raster_bram_trial.sv'
+      - 'A0-GPU/tests/rtl/a0_p140_raster_bram_diff_tb.sv'
+      - 'A0-GPU/docs/P140-RASTER-BRAM-TRIAL.md'
+      - '.github/workflows/a0-p140-raster-bram.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p140_raster_bram_trial.sv'
+      - 'A0-GPU/tests/rtl/a0_p140_raster_bram_diff_tb.sv'
+      - '.github/workflows/a0-p140-raster-bram.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p140-real-p102-differential:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Icarus RTL tools
+        run: |
+          set -euo pipefail
+          if ! timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog; then
+            timeout 240s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog
+          fi
+          iverilog -V | head -2
+      - name: Compare real P140 BRAM color/depth against original P102 full frames
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P140/rtl
+          for shape in '4 4' '7 5' '8 8'; do
+            read -r w h <<< "$shape"
+            id="${w}x${h}"
+            iverilog -g2012 -s a0_p140_raster_bram_diff_tb \
+              -Pa0_p140_raster_bram_diff_tb.FRAME_WIDTH="$w" \
+              -Pa0_p140_raster_bram_diff_tb.FRAME_HEIGHT="$h" \
+              -o "EVIDENCE/P140/rtl/$id.vvp" \
+              A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv \
+              A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv \
+              A0-GPU/rtl/graphics/a0_p68_depth_compare.sv \
+              A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv \
+              A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv \
+              A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv \
+              A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv \
+              A0-GPU/rtl/graphics/a0_p140_raster_bram_trial.sv \
+              A0-GPU/tests/rtl/a0_p140_raster_bram_diff_tb.sv \
+              2>&1 | tee "EVIDENCE/P140/rtl/$id-compile.log"
+            timeout 120s vvp "EVIDENCE/P140/rtl/$id.vvp" | tee "EVIDENCE/P140/rtl/$id.log"
+            grep -q '^P140_RASTER_BRAM_FRAME_EQUIVALENCE_PASS ' "EVIDENCE/P140/rtl/$id.log"
+          done
+      - name: Enforce exact P102 RGB/depth coverage in all three test sizes
+        run: |
+          python3 - <<'PY'
+          import json,re
+          from pathlib import Path
+          p=Path('EVIDENCE/P140/rtl')
+          sizes={}
+          pattern=r'^P140_RASTER_BRAM_FRAME_EQUIVALENCE_PASS size=(\d+)x(\d+) clears=(\d+) draws=(\d+) checked=(\d+) ref_writes=(\d+) bram_writes=(\d+)$'
+          for shape,pixels in (('4x4',16),('7x5',35),('8x8',64)):
+              text=(p/f'{shape}.log').read_text()
+              recs=re.findall(pattern,text,re.M)
+              assert len(recs)==1,(shape,text[-300:])
+              w,h,clears,draws,checked,ref_writes,bram_writes=map(int,recs[0])
+              assert f'{w}x{h}'==shape and clears==2 and draws==5
+              assert checked>=6*pixels and ref_writes>=5 and ref_writes==bram_writes
+              sizes[shape]={'pixels':pixels,'checked':checked,'ref_writes':ref_writes,
+                            'bram_writes':bram_writes}
+          (p/'qualification.json').write_text(json.dumps({
+            'milestone':'P140','status':'PASS','real_iverilog':True,
+            'P102_full_frame_color_depth_equal':True,'sizes':sizes,
+            'physical_board_tested':False,'P132_drop_in_replacement':False,
+            'two_shaded_pixels_per_cycle_proven':False
+          },indent=2))
+          print('P140_P102_BRAM_FRAME_DIFF_MATRIX_PASS actual BRAM pipeline')
+          PY
+      - name: Always upload RTL evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p140-real-raster-bram-differential
+          path: EVIDENCE/P140/rtl/
+          if-no-files-found: warn
+  p140-integrated-ecp5-route:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Yosys nextpnr-ecp5 tools
+        run: |
+          set -euo pipefail
+          if ! timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5; then
+            timeout 300s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5
+          fi
+          yosys -V
+          nextpnr-ecp5 --version
+      - name: Synthesize actual raster/scissor/depth/blend plus P139/P138 RAM
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P140/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv A0-GPU/rtl/graphics/a0_p140_raster_bram_trial.sv; hierarchy -check -top a0_p140_raster_bram_trial -chparam FRAME_WIDTH 4 -chparam FRAME_HEIGHT 4; synth_ecp5 -top a0_p140_raster_bram_trial -json EVIDENCE/P140/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P140/route/yosys.log
+      - name: Place route actual P140 ECP5-85K model
+        run: |
+          set -euo pipefail
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P140/route/netlist.json \
+            --textcfg EVIDENCE/P140/route/route.config \
+            --report EVIDENCE/P140/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P140/route/nextpnr.log
+      - name: Check actual ECP5 BRAM count and complete timing
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import collections,json
+          p=Path('EVIDENCE/P140/route')
+          top=json.loads((p/'netlist.json').read_text())['modules']['a0_p140_raster_bram_trial']
+          io=sum(len(v['bits']) for v in top['ports'].values())
+          assert 0<io<=512,io
+          kinds=collections.Counter(c['type'] for c in top['cells'].values())
+          assert kinds.get('DP16KD',0)>=2,'P140 needs actual FPGA BRAM mapped from P138'
+          assert not any(x.startswith('$') or x.startswith('a0_') or 'LATCH' in x.upper() for x in kinds)
+          report=json.loads((p/'route.json').read_text())
+          for k in ('TRELLIS_IO','TRELLIS_COMB'):
+              u=report['utilization'][k]
+              assert 0<u['used']<=u['available'],k
+          clocks=report['fmax']
+          assert clocks and any('clk' in k for k in clocks)
+          for k,v in clocks.items():
+              assert v['constraint']>=5 and v['achieved']>=v['constraint'],(k,v)
+          (p/'qualification.json').write_text(json.dumps({
+            'milestone':'P140','status':'PASS','actual_ECP5_mapped':True,
+            'DP16KD':kinds['DP16KD'],'top_io_bits':io,'cells':kinds,
+            'clocks':clocks,'single_pixel_raster_pipeline':True,
+            'P132_integrated':False,'physical_board_tested':False
+          },indent=2))
+          print('P140_RASTER_BRAM_ECP5_PASS genuine full trial synthesis/route')
+          print('P140_REAL_ECP5_BRAM_PRIMITIVES',kinds['DP16KD'])
+          PY
+      - name: Always upload ECP5 route evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p140-real-raster-bram-route
+          path: EVIDENCE/P140/route/
+          if-no-files-found: warn
