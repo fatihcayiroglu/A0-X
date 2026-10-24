@@ -147,7 +147,7 @@ module a0_p153_packed_fragment_p102_tb #(
     repeat(4)@(negedge clk);rst_n=1;
     rd(15,out);
     if(out!==32'hA0153001)$fatal(1,"P153 wrong shader bus device ID");
-    expect_error(1,9,32'h10); // scissor not yet supported
+    expect_error(1,9,32'h20); // P154 supports scissor bit4; reserved bit5 still rejected
     expect_error(1,18,32'hff000000); // malformed instruction must NOT write
     expect_error(1,19,0); // invalid program length
     wr(0,{8'd0,clear_color});
