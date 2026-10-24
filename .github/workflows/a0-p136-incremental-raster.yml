@@ -136,13 +136,14 @@ jobs:
               assert v['constraint']>=5 and v['achieved']>=v['constraint'], (key,v)
           gpu=[v['achieved'] for key,v in fmax.items() if 'gpu_clk' in key]
           assert len(gpu)==1
+          assert gpu[0]>=36.50, f'GPU regression against P135 36.50 MHz baseline: {gpu[0]:.4f} MHz'
           e={'milestone':'P136','status':'PASS','real_fpga_pnr':True,
              'previous_p135_gpu_reported_fmax_mhz':36.50,
              'candidate_reported_gpu_fmax_mhz':gpu[0],
              'mapped_cells':len(kinds),'top_io_bits':io,'clocks':fmax,
              'physical_cdc_qualified':False,'board_tested':False}
           (p/'qualification.json').write_text(json.dumps(e,indent=2))
-          print('P136_ECP5_MAPPED_RASTER_PASS research-only')
+          print('P136_ECP5_MAPPED_RASTER_PASS non-regressing GPU Fmax, research-only')
           print('P136_GPU_FMAX_MHZ',gpu[0])
           PY
       - name: Upload mapped timing report even on failure
