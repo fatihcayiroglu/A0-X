@@ -1,0 +1,158 @@
+name: A0-X P143 incremental dual-raster RTL and ECP5 Fmax regression
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p142_dual_opaque_raster_bram.sv'
+      - 'A0-GPU/docs/P143-DUAL-INCREMENTAL-EDGE.md'
+      - '.github/workflows/a0-p143-incremental-dual.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p142_dual_opaque_raster_bram.sv'
+      - '.github/workflows/a0-p143-incremental-dual.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p143-extra-row-crossings-p102-oracle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual Icarus compiler
+        run: |
+          set -euo pipefail
+          if ! timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog; then
+            timeout 240s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog
+          fi
+          iverilog -V | head -2
+      - name: True P142 dual raster versus independent P102 extra sizes
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P143/rtl
+          for shape in '1 9' '9 1' '6 6'; do
+            read -r w h <<< "$shape"
+            id="${w}x${h}"
+            iverilog -g2012 -s a0_p142_dual_opaque_raster_tb \
+              -Pa0_p142_dual_opaque_raster_tb.FRAME_WIDTH="$w" \
+              -Pa0_p142_dual_opaque_raster_tb.FRAME_HEIGHT="$h" \
+              -o "EVIDENCE/P143/rtl/$id.vvp" \
+              A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv \
+              A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv \
+              A0-GPU/rtl/graphics/a0_p68_depth_compare.sv \
+              A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv \
+              A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv \
+              A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv \
+              A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv \
+              A0-GPU/rtl/graphics/a0_p142_dual_opaque_raster_bram.sv \
+              A0-GPU/tests/rtl/a0_p142_dual_opaque_raster_tb.sv \
+              2>&1 | tee "EVIDENCE/P143/rtl/$id-compile.log"
+            timeout 120s vvp "EVIDENCE/P143/rtl/$id.vvp" | tee "EVIDENCE/P143/rtl/$id.log"
+            grep -q '^P142_DUAL_OPAQUE_FRAME_PASS ' "EVIDENCE/P143/rtl/$id.log"
+          done
+      - name: Verify expected real two-pixel issue count and all shapes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,re
+          p=Path('EVIDENCE/P143/rtl')
+          shapes={}
+          pattern=r'^P142_DUAL_OPAQUE_FRAME_PASS shape=(\d+)x(\d+) drawn=(\d+) dual_write_cycles=(\d+) full_original_cycles=(\d+) full_dual_cycles=(\d+) comparisons=(\d+)$'
+          for shape,pixels in [('1x9',9),('9x1',9),('6x6',36)]:
+              text=(p/f'{shape}.log').read_text()
+              entries=re.findall(pattern,text,re.M)
+              assert len(entries)==1,(shape,entries,text[-200:])
+              w,h,draws,dual,original,optimized,compares=map(int,entries[0])
+              assert f'{w}x{h}'==shape and draws==6
+              assert dual>=3 and original==3*pixels
+              assert optimized==3*((pixels+1)//2), (shape,optimized,pixels)
+              assert compares>=8*pixels
+              assert len(re.findall('^P142_DRAW_METRIC_PASS ',text,re.M))==6
+              shapes[shape]={'pixels':pixels,'full_draw_original_cycles':original,
+                  'full_draw_incremental_cycles':optimized,
+                  'simultaneous_dual_writes':dual,'pixel_comparisons':compares}
+          (p/'qualification.json').write_text(json.dumps({
+            'milestone':'P143','status':'PASS','real_RTL':True,
+            'exact_original_P102_frames':True,
+            'shapes':shapes,'physical_card_tested':False
+          },indent=2))
+          print('P143_DUAL_EDGE_ODD_ROW_ORACLE_PASS three additional framebuffer geometries')
+          PY
+      - name: Always upload simulated frame evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p143-row-crossing-evidence
+          path: EVIDENCE/P143/rtl/
+          if-no-files-found: warn
+
+  p143-real-ecp5-fmax:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install genuine Yosys nextpnr ECP5 tools
+        run: |
+          set -euo pipefail
+          if ! timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5; then
+            timeout 300s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5
+          fi
+          yosys -V
+          nextpnr-ecp5 --version
+      - name: Genuine technology synthesis of dual incremental edge pipeline and banks
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P143/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv A0-GPU/rtl/graphics/a0_p142_dual_opaque_raster_bram.sv; hierarchy -check -top a0_p142_dual_opaque_raster_bram -chparam FRAME_WIDTH 4 -chparam FRAME_HEIGHT 4; synth_ecp5 -top a0_p142_dual_opaque_raster_bram -json EVIDENCE/P143/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P143/route/yosys.log
+      - name: Route genuine ECP5-85K fixed exact P142 configuration
+        run: |
+          set -euo pipefail
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P143/route/netlist.json \
+            --textcfg EVIDENCE/P143/route/route.config \
+            --report EVIDENCE/P143/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P143/route/nextpnr.log
+      - name: Strict mapped dual-lane Fmax non-regression and real BRAM gate
+        run: |
+          python3 - <<'PY'
+          import collections,json
+          from pathlib import Path
+          p=Path('EVIDENCE/P143/route')
+          top=json.loads((p/'netlist.json').read_text())['modules']['a0_p142_dual_opaque_raster_bram']
+          io=sum(len(v['bits']) for v in top['ports'].values())
+          assert 0<io<=384,io
+          counts=collections.Counter(v['type'] for v in top['cells'].values())
+          assert counts.get('DP16KD',0)>=2,'Need actual dual-bank FPGA block RAM cells'
+          assert not any(k.startswith('$') or k.startswith('a0_') or 'LATCH' in k.upper() for k in counts),counts
+          route=json.loads((p/'route.json').read_text())
+          for kind in ('TRELLIS_IO','TRELLIS_COMB'):
+              u=route['utilization'][kind]
+              assert 0<u['used']<=u['available'],kind
+          fmax=route['fmax']
+          assert len(fmax)>=1 and any('clk' in k for k in fmax)
+          for clk,value in fmax.items():
+              assert value['constraint']>=5 and value['achieved']>=value['constraint']
+              assert value['achieved']>=27.44, f'P143 Fmax regressed vs actual P142 27.449MHz: {clk}: {value}'
+          measured=min(c['achieved'] for c in fmax.values())
+          (p/'qualification.json').write_text(json.dumps({
+            'status':'PASS','milestone':'P143','real_ecp5_route':True,
+            'p142_reference_fmax_MHz':27.4492,'p143_tool_fmax_MHz':measured,
+            'fmax_improvement_percent':round((measured/27.4492-1)*100,3),
+            'top_io_bits':io,'DP16KD':counts.get('DP16KD',0),
+            'mapped_cells':sum(counts.values()),'reported_fmax':fmax,
+            'actual_hardware_benchmark':False
+          },indent=2))
+          print('P143_INCREMENTAL_DUAL_EDGE_ROUTE_PASS no mapped Fmax regression')
+          print('P143_REAL_DP16KD',counts['DP16KD'])
+          print('P143_MAPPED_FMAX_MHZ',round(measured,4))
+          PY
+      - name: Upload mapped resources and clock evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p143-real-ecp5-qualification
+          path: EVIDENCE/P143/route/
+          if-no-files-found: warn
