@@ -3,14 +3,18 @@ on:
   pull_request:
     paths:
       - 'A0-GPU/rtl/graphics/a0_p145_dual_raster_depth_blend_trial.sv'
+      - 'A0-GPU/rtl/graphics/a0_p145_bounded_pin_top.sv'
       - 'A0-GPU/tests/rtl/a0_p145_dual_raster_depth_blend_diff_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p145_bounded_pin_diff_tb.sv'
       - 'A0-GPU/docs/P145-INTEGRATED-DUAL-DEPTH-BLEND.md'
       - '.github/workflows/a0-p145-dual-raster-depth-blend.yml'
   push:
     branches: [main]
     paths:
       - 'A0-GPU/rtl/graphics/a0_p145_dual_raster_depth_blend_trial.sv'
+      - 'A0-GPU/rtl/graphics/a0_p145_bounded_pin_top.sv'
       - 'A0-GPU/tests/rtl/a0_p145_dual_raster_depth_blend_diff_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p145_bounded_pin_diff_tb.sv'
       - '.github/workflows/a0-p145-dual-raster-depth-blend.yml'
   workflow_dispatch:
 permissions:
@@ -53,6 +57,24 @@ jobs:
               2>&1 | tee "EVIDENCE/P145/rtl/$id-compile.log"
             timeout 120s vvp "EVIDENCE/P145/rtl/$id.vvp" | tee "EVIDENCE/P145/rtl/$id.log"
             grep -q '^P145_RASTER_BRAM_FRAME_EQUIVALENCE_PASS ' "EVIDENCE/P145/rtl/$id.log"
+            iverilog -g2012 -s a0_p145_bounded_pin_diff_tb \
+              -Pa0_p145_bounded_pin_diff_tb.FRAME_WIDTH="$w" \
+              -Pa0_p145_bounded_pin_diff_tb.FRAME_HEIGHT="$h" \
+              -o "EVIDENCE/P145/rtl/$id-wrapper.vvp" \
+              A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv \
+              A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv \
+              A0-GPU/rtl/graphics/a0_p68_depth_compare.sv \
+              A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv \
+              A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv \
+              A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv \
+              A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv \
+              A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv \
+              A0-GPU/rtl/graphics/a0_p145_dual_raster_depth_blend_trial.sv \
+              A0-GPU/rtl/graphics/a0_p145_bounded_pin_top.sv \
+              A0-GPU/tests/rtl/a0_p145_bounded_pin_diff_tb.sv \
+              2>&1 | tee "EVIDENCE/P145/rtl/$id-wrapper-compile.log"
+            timeout 120s vvp "EVIDENCE/P145/rtl/$id-wrapper.vvp" | tee "EVIDENCE/P145/rtl/$id-wrapper.log"
+            grep -q '^P145_RASTER_BRAM_FRAME_EQUIVALENCE_PASS ' "EVIDENCE/P145/rtl/$id-wrapper.log"
           done
       - name: Enforce exact P102 RGB/depth coverage in all three test sizes
         run: |
@@ -70,6 +92,15 @@ jobs:
               assert f'{w}x{h}'==shape and clears==2 and draws==5
               assert checked>=6*pixels and ref_writes>=5 and ref_writes==bram_writes
               assert dual_write_cycles>=1 and host_stall>=1
+              # Physical-pin wrapper uses the same independent P102
+              # golden oracle, with an explicitly bounded 8-bit signed
+              # vertex interface. Never claim the full 16-bit top routed.
+              wrapped=(p/f'{shape}-wrapper.log').read_text()
+              wr=re.findall(pattern,wrapped,re.M)
+              assert len(wr)==1,(shape,wrapped[-300:])
+              ww,hh,wc,wd,wchecks,wrw,wbw,wdual,wstall=map(int,wr[0])
+              assert ww==w and hh==h and wc==clears and wd==draws
+              assert wchecks>=6*pixels and wrw==wbw and wdual>=1 and wstall>=1
               sizes[shape]={'pixels':pixels,'checked':checked,'ref_writes':ref_writes,
                             'bram_writes':bram_writes,'dual_write_cycles':dual_write_cycles,'host_stall':host_stall}
           (p/'qualification.json').write_text(json.dumps({
@@ -105,7 +136,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p EVIDENCE/P145/route
-          yosys -p "read_verilog -sv A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv A0-GPU/rtl/graphics/a0_p145_dual_raster_depth_blend_trial.sv; hierarchy -check -top a0_p145_dual_raster_depth_blend_trial -chparam FRAME_WIDTH 4 -chparam FRAME_HEIGHT 4; synth_ecp5 -top a0_p145_dual_raster_depth_blend_trial -json EVIDENCE/P145/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P145/route/yosys.log
+          yosys -p "read_verilog -sv A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv A0-GPU/rtl/graphics/a0_p145_dual_raster_depth_blend_trial.sv A0-GPU/rtl/graphics/a0_p145_bounded_pin_top.sv; hierarchy -check -top a0_p145_bounded_pin_top -chparam FRAME_WIDTH 4 -chparam FRAME_HEIGHT 4; synth_ecp5 -top a0_p145_bounded_pin_top -json EVIDENCE/P145/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P145/route/yosys.log
       - name: Place route actual P145 ECP5-85K model
         run: |
           set -euo pipefail
@@ -121,9 +152,11 @@ jobs:
           from pathlib import Path
           import collections,json
           p=Path('EVIDENCE/P145/route')
-          top=json.loads((p/'netlist.json').read_text())['modules']['a0_p145_dual_raster_depth_blend_trial']
+          top=json.loads((p/'netlist.json').read_text())['modules']['a0_p145_bounded_pin_top']
           io=sum(len(v['bits']) for v in top['ports'].values())
-          assert 0<io<=512,io
+          # CABGA756 has only 365 available TRELLIS_IO cells. Require real
+          # margin from the narrowed research vertex pin interface.
+          assert 0<io<=340,io
           kinds=collections.Counter(c['type'] for c in top['cells'].values())
           assert kinds.get('DP16KD',0)>=2,'P145 needs actual FPGA BRAM mapped from P138'
           assert not any(x.startswith('$') or x.startswith('a0_') or 'LATCH' in x.upper() for x in kinds)
@@ -139,7 +172,8 @@ jobs:
             'milestone':'P145','status':'PASS','actual_ECP5_mapped':True,
             'DP16KD':kinds['DP16KD'],'top_io_bits':io,'cells':kinds,
             'clocks':clocks,'single_pixel_raster_pipeline':True,
-            'P132_integrated':False,'physical_board_tested':False
+            'P132_integrated':False,'bounded_8bit_vertex_interface':True,
+            'physical_board_tested':False
           },indent=2))
           print('P145_RASTER_BRAM_ECP5_PASS genuine full trial synthesis/route')
           print('P145_REAL_ECP5_BRAM_PRIMITIVES',kinds['DP16KD'])
