@@ -4,7 +4,7 @@
 // Sequential dependencies obey committed register values; 1 ALU
 // instruction in flight, no out-of-order hazards or speculative writes.
 // Single clock, research only: NOT a GPU shader ISA, register scoreboard,
-// raster integrated programmable fragment program, FP32 or PCIe card.
+// raster integrated programmable fragment insn_ram, FP32 or PCIe card.
 module a0_p151_unorm_microprogram #(
   parameter integer REG_COUNT=8,
   parameter integer INSN_COUNT=16
@@ -27,12 +27,12 @@ module a0_p151_unorm_microprogram #(
   // [2:0] srcB, [5:3] srcA, [8:6] dst, [11:9] opcode,
   // [15:12] mask, [23:16] alpha.
   logic [31:0] regs[0:REG_COUNT-1];
-  logic [23:0] program[0:INSN_COUNT-1];
+  logic [23:0] insn_ram[0:INSN_COUNT-1];
   logic [1:0] state_q;
   localparam logic [1:0] IDLE=2'd0,ISSUE=2'd1,WAIT=2'd2,FAILED=2'd3;
   logic [3:0] pc_q;
   logic [4:0] run_len_q;
-  wire [23:0] instruction=program[pc_q];
+  wire [23:0] instruction=insn_ram[pc_q];
   wire [2:0] src_b=instruction[2:0];
   wire [2:0] src_a=instruction[5:3];
   wire [2:0] dst=instruction[8:6];
@@ -60,7 +60,7 @@ module a0_p151_unorm_microprogram #(
       state_q<=IDLE;pc_q<=0;run_len_q<=0;
       retired_count<=0;done<=0;fault<=0;
       for(i=0;i<REG_COUNT;i=i+1)regs[i]<=0;
-      for(i=0;i<INSN_COUNT;i=i+1)program[i]<=0;
+      for(i=0;i<INSN_COUNT;i=i+1)insn_ram[i]<=0;
     end else begin
       done<=0;
       if(state_q==IDLE)begin
@@ -79,7 +79,7 @@ module a0_p151_unorm_microprogram #(
           end
         end else begin
           if(reg_write_valid)regs[reg_write_index]<=reg_write_data;
-          if(insn_write_valid)program[insn_write_index]<=insn_write_data;
+          if(insn_write_valid)insn_ram[insn_write_index]<=insn_write_data;
         end
       end else if(state_q==ISSUE)begin
         if(alu_ready)state_q<=WAIT;
