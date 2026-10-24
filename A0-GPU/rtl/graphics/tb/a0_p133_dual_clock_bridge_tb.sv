@@ -1,8 +1,15 @@
 `timescale 1ns/1ps
-module a0_p133_dual_clock_bridge_tb;
+module a0_p133_dual_clock_bridge_tb #(
+  parameter integer HOST_HALF_NS=3,
+  parameter integer GPU_HALF_NS=11,
+  parameter integer GPU_PHASE_NS=0
+);
   reg host_clk=0, gpu_clk=0;
-  always #3 host_clk=~host_clk;
-  always #11 gpu_clk=~gpu_clk;
+  always #(HOST_HALF_NS) host_clk=~host_clk;
+  initial begin
+    #(GPU_PHASE_NS);
+    forever #(GPU_HALF_NS) gpu_clk=~gpu_clk;
+  end
   reg rst_n=0;
   reg h_req_valid=0,h_req_write=0,h_rsp_ready=0;
   reg [7:0] h_req_addr=0;
