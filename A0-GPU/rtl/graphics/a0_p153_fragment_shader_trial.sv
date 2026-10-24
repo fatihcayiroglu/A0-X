@@ -170,7 +170,7 @@ module a0_p153_fragment_shader_trial #(
         CLEAR_WAIT:if(rmw_rsp_valid)begin
           if(rmw_rsp_error)begin
             state_q<=FAILED;local_fault_q<=1;
-          end else if(clear_pos_q==$clog2(PIXELS+1)'(PIXELS-1))begin
+          end else if(clear_pos_q==(PIXELS-1))begin
             initialized_q<=1;clear_done<=1;state_q<=IDLE;
           end else begin
             clear_pos_q<=clear_next;
