@@ -20,4 +20,12 @@ The register read port is a synchronous-clock-domain combinational debug observa
 - Genuine Yosys `synth_ecp5` + nextpnr ECP5-85K CABGA756 speed6 seed1, 5MHz research timing target, unconstrained pins. Require no unmapped/latch primitives, actual DSP multipliers from P150, bounded full top I/O, generated complete timing and resource report. Do not compare this standalone shader sequencer's frequency with the full P149 raster subsystem as if already integrated.
 - Inherited P126/P127 and any other triggered exact-head regressions must pass. If a gate is missing/red/pending, remain draft.
 
+## Initial verified RTL + ECP5 evidence — 24 October 2026
+
+Actual head `2c4c6c21`: P126, P127 and P151 exact-head GitHub Actions all PASS. The real P151+P150 Icarus full sequential execution test verified **52 programs**, **793 retired SIMD instructions**, **741 explicit read-after-write source dependencies**, **10 ignored configuration write attempts during busy**, **424 independent full-register readback checks** and **two latched fail-closed launch errors** (zero-length and simultaneous start/write). Reset cleared instruction memory and all eight vector registers; a subsequent one-instruction program matched the scalar mathematical oracle.
+
+Full genuine Yosys+nextpnr ECP5-85K CABGA756 speed6 seed1, 5MHz internal tool target, externally unconstrained pins mapped and routed the combined P151+P150 engine: **117 top-level RTL I/O bits**, **700 TRELLIS_FF**, **8 MULT18X18D FPGA DSP multipliers**, with an estimated **33.594 MHz** routed Fmax. This is a different integrated shader-sequencer research top from P150's standalone 169.46MHz ALU; it demonstrates significant program-control and register mux overhead, not an integrated A0-X GPU shader clock.
+
+The final documentation-only commit must also pass same-head CI before merge. This design still does not fetch attribute buffers, produce raster pipeline colors, execute real application shader binaries, or replace any host CPU's graphics stack.
+
 This is a meaningful sequential shader-execution **prototype**, not a modern RTX-class GPU or measured gaming FPS.
