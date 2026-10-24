@@ -1,0 +1,164 @@
+name: A0-X P134 clock-ratio matrix and 5MHz ECP5 research fit
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/**'
+      - 'A0-GPU/docs/P134-CLOCK-RATIO-AND-5MHZ-QUALIFICATION.md'
+      - '.github/workflows/a0-p134-clock-ratio.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/**'
+      - 'A0-GPU/docs/P134-CLOCK-RATIO-AND-5MHZ-QUALIFICATION.md'
+      - '.github/workflows/a0-p134-clock-ratio.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p134-clock-ratio-real-rtl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Icarus with bounded package time
+        run: |
+          set -euo pipefail
+          if ! timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog; then
+            timeout 240s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog
+          fi
+          iverilog -V | head -2
+      - name: Run all actual integrated RTL and FIFO stress clock ratios
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P134/ratios
+          for config in '3 11 0' '11 3 1' '7 9 2' '9 7 3' '5 5 1' '4 13 3'; do
+            read -r host gpu phase <<< "$config"
+            id="h${host}-g${gpu}-p${phase}"
+            dir="EVIDENCE/P134/ratios/$id"
+            mkdir -p "$dir"
+            printf '%s\n' "$config" > "$dir/clock-config.txt"
+            iverilog -g2012 -s a0_p133_dual_clock_bridge_tb \
+              -Pa0_p133_dual_clock_bridge_tb.HOST_HALF_NS="$host" \
+              -Pa0_p133_dual_clock_bridge_tb.GPU_HALF_NS="$gpu" \
+              -Pa0_p133_dual_clock_bridge_tb.GPU_PHASE_NS="$phase" \
+              -o "$dir/bridge.vvp" \
+              A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv \
+              A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv \
+              A0-GPU/rtl/graphics/a0_p68_depth_compare.sv \
+              A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv \
+              A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv \
+              A0-GPU/rtl/graphics/a0_p132_command_bus.sv \
+              A0-GPU/rtl/graphics/a0_p133_async_fifo.sv \
+              A0-GPU/rtl/graphics/a0_p133_dual_clock_bridge.sv \
+              A0-GPU/rtl/graphics/tb/a0_p133_dual_clock_bridge_tb.sv \
+              2>&1 | tee "$dir/bridge-compile.log"
+            timeout 90s vvp "$dir/bridge.vvp" | tee "$dir/bridge.log"
+            grep -qx 'P133_REAL_DUAL_CLOCK_RTL_PASS ordered burst/backpressure/clear/readback/reset' "$dir/bridge.log"
+            iverilog -g2012 -s a0_p133_async_fifo_stress_tb \
+              -Pa0_p133_async_fifo_stress_tb.HOST_HALF_NS="$host" \
+              -Pa0_p133_async_fifo_stress_tb.GPU_HALF_NS="$gpu" \
+              -Pa0_p133_async_fifo_stress_tb.GPU_PHASE_NS="$phase" \
+              -o "$dir/fifo.vvp" \
+              A0-GPU/rtl/graphics/a0_p133_async_fifo.sv \
+              A0-GPU/rtl/graphics/tb/a0_p133_async_fifo_stress_tb.sv \
+              2>&1 | tee "$dir/fifo-compile.log"
+            timeout 90s vvp "$dir/fifo.vvp" | tee "$dir/fifo.log"
+            grep -qx 'P133_ASYNC_FIFO_STRESS_PASS widths=41,33 ordered=512x2 full/empty/stall/reset' "$dir/fifo.log"
+          done
+      - name: Require exactly six positive evidence pairs
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('EVIDENCE/P134/ratios')
+          expected=['h3-g11-p0','h11-g3-p1','h7-g9-p2','h9-g7-p3','h5-g5-p1','h4-g13-p3']
+          assert sorted(p.name for p in root.iterdir() if p.is_dir())==sorted(expected)
+          for case in expected:
+              d=root/case
+              assert 'P133_REAL_DUAL_CLOCK_RTL_PASS' in (d/'bridge.log').read_text(),case
+              assert 'P133_ASYNC_FIFO_STRESS_PASS' in (d/'fifo.log').read_text(),case
+          (root.parent/'qualification.json').write_text(json.dumps({
+              'milestone':'P134','status':'PASS','ratios_passed':expected,
+              'integration_runs':6,'fifo_stress_runs':6,
+              'fifo_verified_words_per_direction_per_ratio':512,
+              'real_rtl_simulation':True,'physical_cdc_qualified':False,
+              'board_tested':False
+          },indent=2))
+          print('P134_CLOCK_RATIO_MATRIX_PASS all six integrated and FIFO RTL pairs')
+          PY
+      - name: Upload RTL evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-p134-clock-ratio-evidence
+          path: EVIDENCE/P134/
+          if-no-files-found: warn
+
+  p134-ecp5-5mhz-route:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install genuine Yosys and nextpnr with bounded time
+        run: |
+          set -euo pipefail
+          if ! timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5; then
+            timeout 300s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5
+          fi
+          yosys -V
+          nextpnr-ecp5 --version
+      - name: Synthesize the complete P133 GPU bridge for real ECP5 technology
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P134/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv A0-GPU/rtl/graphics/a0_p132_command_bus.sv A0-GPU/rtl/graphics/a0_p133_async_fifo.sv A0-GPU/rtl/graphics/a0_p133_dual_clock_bridge.sv; hierarchy -check -top a0_p133_dual_clock_bridge -chparam FRAME_WIDTH 4 -chparam FRAME_HEIGHT 4; synth_ecp5 -top a0_p133_dual_clock_bridge -json EVIDENCE/P134/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P134/route/yosys.log
+      - name: Place and route ECP5-85K at 5MHz internal timing target
+        run: |
+          set -euo pipefail
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P134/route/netlist.json \
+            --textcfg EVIDENCE/P134/route/route.config \
+            --report EVIDENCE/P134/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P134/route/nextpnr.log
+      - name: Fail closed on clock constraints, mapping and resource allocation
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('EVIDENCE/P134/route')
+          n=json.loads((p/'netlist.json').read_text())
+          t=n['modules']['a0_p133_dual_clock_bridge']
+          assert t['ports']['host_clk']['bits']!=t['ports']['gpu_clk']['bits']
+          io=sum(len(port['bits']) for port in t['ports'].values())
+          assert 0<io<=96, f'bounded IO violated: {io}'
+          kinds=[c['type'] for c in t['cells'].values()]
+          assert kinds and not any(k.startswith('$') or k.startswith('a0_') or 'LATCH' in k.upper() for k in kinds)
+          r=json.loads((p/'route.json').read_text())
+          util=r['utilization']
+          for k in ('TRELLIS_COMB','TRELLIS_IO'):
+              assert 0<util[k]['used']<=util[k]['available'], k
+          fmax=r['fmax']
+          assert len(fmax)>=2, 'did not report both independent clocks'
+          for clock,v in fmax.items():
+              assert v['constraint']>=5.0, f'{clock}: incorrect requested 5MHz constraint'
+              assert v['achieved']>=v['constraint'], f'{clock}: 5MHz timing failed'
+          evidence={
+              'milestone':'P134','status':'PASS','real_ecp5_synthesis_and_pnr':True,
+              'top_io_bits':io,'mapped_cells':len(kinds),
+              'reported_fmax':fmax,'internal_minimum_mhz':5,
+              'physical_cdc_qualified':False,'gray_bus_skew_qualified':False,
+              'external_io_timing_qualified':False,'board_tested':False
+          }
+          (p/'qualification.json').write_text(json.dumps(evidence,indent=2))
+          print('P134_5MHZ_RESEARCH_ROUTE_PASS both clock domains; NOT physical signoff')
+          PY
+      - name: Upload ECP5 evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-p134-5mhz-ecp5-evidence
+          path: EVIDENCE/P134/route/
+          if-no-files-found: warn
