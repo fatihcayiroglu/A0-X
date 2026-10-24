@@ -1,0 +1,165 @@
+name: A0-X P142 dual opaque raster exact P102 differential and ECP5
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p142_dual_opaque_raster_bram.sv'
+      - 'A0-GPU/tests/rtl/a0_p142_dual_opaque_raster_tb.sv'
+      - 'A0-GPU/docs/P142-DUAL-OPAQUE-RASTER.md'
+      - '.github/workflows/a0-p142-dual-opaque.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p142_dual_opaque_raster_bram.sv'
+      - 'A0-GPU/tests/rtl/a0_p142_dual_opaque_raster_tb.sv'
+      - '.github/workflows/a0-p142-dual-opaque.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p142-real-p102-frame-differential:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install genuine Icarus HDL tool
+        run: |
+          set -euo pipefail
+          if ! timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog; then
+            timeout 240s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog
+          fi
+          iverilog -V | head -2
+      - name: Compare each actual BRAM framebuffer against P102 and measure two pixels per cycle
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P142/rtl
+          for shape in '4 4' '7 5' '8 8'; do
+            read -r w h <<< "$shape"
+            id="${w}x${h}"
+            iverilog -g2012 -s a0_p142_dual_opaque_raster_tb \
+              -Pa0_p142_dual_opaque_raster_tb.FRAME_WIDTH="$w" \
+              -Pa0_p142_dual_opaque_raster_tb.FRAME_HEIGHT="$h" \
+              -o "EVIDENCE/P142/rtl/$id.vvp" \
+              A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv \
+              A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv \
+              A0-GPU/rtl/graphics/a0_p68_depth_compare.sv \
+              A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv \
+              A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv \
+              A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv \
+              A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv \
+              A0-GPU/rtl/graphics/a0_p142_dual_opaque_raster_bram.sv \
+              A0-GPU/tests/rtl/a0_p142_dual_opaque_raster_tb.sv \
+              2>&1 | tee "EVIDENCE/P142/rtl/$id-compile.log"
+            timeout 120s vvp "EVIDENCE/P142/rtl/$id.vvp" | tee "EVIDENCE/P142/rtl/$id.log"
+            grep -q '^P142_DUAL_OPAQUE_FRAME_PASS ' "EVIDENCE/P142/rtl/$id.log"
+          done
+      - name: Fail closed on missing or fabricated cycle/throughput evidence
+        run: |
+          python3 - <<'PY'
+          import json,re
+          from pathlib import Path
+          p=Path('EVIDENCE/P142/rtl')
+          shapes={}
+          summary_pattern=r'^P142_DUAL_OPAQUE_FRAME_PASS shape=(\d+)x(\d+) drawn=(\d+) dual_write_cycles=(\d+) full_original_cycles=(\d+) full_dual_cycles=(\d+) comparisons=(\d+)$'
+          draw_pattern=r'^P142_DRAW_METRIC_PASS shape=(\d+)x(\d+) ref_cycles=(\d+) dual_cycles=(\d+) writes=(\d+) full=(\d+)$'
+          for name,pixels in [('4x4',16),('7x5',35),('8x8',64)]:
+              content=(p/f'{name}.log').read_text()
+              rows=re.findall(summary_pattern,content,re.M)
+              assert len(rows)==1,(name,rows)
+              w,h,draws,pairs,ref_cycles,dual_cycles,compares=map(int,rows[0])
+              assert f'{w}x{h}'==name and draws==6
+              assert pairs>=3 and ref_cycles==3*pixels
+              assert dual_cycles==3*((pixels+1)//2)
+              assert compares>=8*pixels
+              draw_rows=re.findall(draw_pattern,content,re.M)
+              assert len(draw_rows)==6,(name,draw_rows)
+              assert sum(int(row[-1]) for row in draw_rows)==3
+              shapes[name]={'pixels':pixels,'draws':draws,
+                'simultaneous_two_pixel_write_cycles':pairs,
+                'full_draw_original_cycles':ref_cycles,
+                'full_draw_dual_cycles':dual_cycles,
+                'frame_pixels_compared':compares}
+          (p/'qualification.json').write_text(json.dumps({
+              'status':'PASS','milestone':'P142',
+              'real_iverilog':True,'real_P102_pixel_oracle':True,
+              'shapes':shapes,'only_opaque_ALWAYs_depth_supported':True,
+              'physical_GPU_or_shader_benchmark':False
+          },indent=2))
+          print('P142_TRUE_DUAL_OPAQUE_RASTER_RTL_PASS all 3 shapes full-frame and 2-lane cycle gates')
+          PY
+      - name: Upload actual frame RTL evidence, even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p142-real-dual-raster-p102-diff
+          path: EVIDENCE/P142/rtl/
+          if-no-files-found: warn
+
+  p142-full-dual-lane-ecp5-route:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install genuine FPGA technology mapping and PnR
+        run: |
+          set -euo pipefail
+          if ! timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5; then
+            timeout 300s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5
+          fi
+          yosys -V
+          nextpnr-ecp5 --version
+      - name: Synthesize actual 2-pixel coverage and 2-bank BRAM, no mock
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P142/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv A0-GPU/rtl/graphics/a0_p142_dual_opaque_raster_bram.sv; hierarchy -check -top a0_p142_dual_opaque_raster_bram -chparam FRAME_WIDTH 4 -chparam FRAME_HEIGHT 4; synth_ecp5 -top a0_p142_dual_opaque_raster_bram -json EVIDENCE/P142/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P142/route/yosys.log
+      - name: Place and route actual ECP5-85K with 5MHz research target
+        run: |
+          set -euo pipefail
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P142/route/netlist.json \
+            --textcfg EVIDENCE/P142/route/route.config \
+            --report EVIDENCE/P142/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P142/route/nextpnr.log
+      - name: Require two true BRAM banks, no unmapped logic, positive timing
+        run: |
+          python3 - <<'PY'
+          import collections,json
+          from pathlib import Path
+          p=Path('EVIDENCE/P142/route')
+          n=json.loads((p/'netlist.json').read_text())['modules']['a0_p142_dual_opaque_raster_bram']
+          io=sum(len(v['bits']) for v in n['ports'].values())
+          # Actual top exposes 353 research I/O bits. This is below ECP5
+          # CABGA756 pad count but still unconstrained and NOT board-ready.
+          assert 0<io<=384, f'P142 bounded research IO contract violated: {io}'
+          types=collections.Counter(c['type'] for c in n['cells'].values())
+          assert types.get('DP16KD',0)>=2,'Missing at least 2 ECP5 block RAM primitives'
+          assert not any(t.startswith('$') or t.startswith('a0_') or 'LATCH' in t.upper() for t in types),types
+          data=json.loads((p/'route.json').read_text())
+          for k in ('TRELLIS_IO','TRELLIS_COMB'):
+              u=data['utilization'][k]
+              assert 0<u['used']<=u['available'],k
+          clk=data['fmax']
+          assert clk and any('clk' in k for k in clk)
+          for key,v in clk.items():
+              assert v['constraint']>=5 and v['achieved']>=v['constraint'],(key,v)
+          (p/'qualification.json').write_text(json.dumps({
+             'milestone':'P142','status':'PASS','dual_opaque_pixel_lanes':True,
+             'actual_ecp5_route':True,'DP16KD':types['DP16KD'],
+             'top_io_bits':io,'mapped_cells':sum(types.values()),
+             'research_fmax':clk,'real_board_tested':False,
+             'transparent_and_depth_comparison':False
+          },indent=2))
+          print('P142_ECP5_TRUE_DUAL_LANE_PASS research FPGA route with real block RAM')
+          print('P142_REAL_DP16KD',types['DP16KD'])
+          for name,v in clk.items(): print('P142_TOOL_FMAX_MHZ',name,v['achieved'])
+          PY
+      - name: Upload synthesis and routing evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p142-real-dual-ecp5-fit
+          path: EVIDENCE/P142/route/
+          if-no-files-found: warn
