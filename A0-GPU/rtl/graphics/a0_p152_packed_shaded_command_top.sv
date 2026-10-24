@@ -78,11 +78,11 @@ module a0_p152_packed_shaded_command_top #(
     .tri_depth(tri_depth_q),
     .shader_program_length(shader_len_q),
     .shader_reg_write_valid(fire && req_write &&
-                            req_addr==REG_SHADER_REG_DATA && shader_cfg_ready),
+                            req_addr==REG_SHADER_REG_DATA),
     .shader_reg_write_index(selected_reg_q),
     .shader_reg_write_data(req_wdata),
     .shader_insn_write_valid(fire && req_write &&
-                             req_addr==REG_SHADER_INSN_DATA && shader_cfg_ready &&
+                             req_addr==REG_SHADER_INSN_DATA &&
                              req_wdata[31:24]==0),
     .shader_insn_write_index(selected_insn_q),
     .shader_insn_write_data(req_wdata[23:0]),
