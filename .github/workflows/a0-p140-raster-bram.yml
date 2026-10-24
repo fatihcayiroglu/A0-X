@@ -60,16 +60,17 @@ jobs:
           from pathlib import Path
           p=Path('EVIDENCE/P140/rtl')
           sizes={}
-          pattern=r'^P140_RASTER_BRAM_FRAME_EQUIVALENCE_PASS size=(\d+)x(\d+) clears=(\d+) draws=(\d+) checked=(\d+) ref_writes=(\d+) bram_writes=(\d+)$'
+          pattern=r'^P140_RASTER_BRAM_FRAME_EQUIVALENCE_PASS size=(\d+)x(\d+) clears=(\d+) draws=(\d+) checked=(\d+) ref_writes=(\d+) bram_writes=(\d+) host_accept=(\d+) host_stall=(\d+)$'
           for shape,pixels in (('4x4',16),('7x5',35),('8x8',64)):
               text=(p/f'{shape}.log').read_text()
               recs=re.findall(pattern,text,re.M)
               assert len(recs)==1,(shape,text[-300:])
-              w,h,clears,draws,checked,ref_writes,bram_writes=map(int,recs[0])
+              w,h,clears,draws,checked,ref_writes,bram_writes,host_accept,host_stall=map(int,recs[0])
               assert f'{w}x{h}'==shape and clears==2 and draws==5
               assert checked>=6*pixels and ref_writes>=5 and ref_writes==bram_writes
+              assert host_accept>=10 and host_stall>=1
               sizes[shape]={'pixels':pixels,'checked':checked,'ref_writes':ref_writes,
-                            'bram_writes':bram_writes}
+                            'bram_writes':bram_writes,'host_accept':host_accept,'host_stall':host_stall}
           (p/'qualification.json').write_text(json.dumps({
             'milestone':'P140','status':'PASS','real_iverilog':True,
             'P102_full_frame_color_depth_equal':True,'sizes':sizes,
