@@ -45,6 +45,7 @@ module a0_p144_dual_depth_blend_tb #(
   integer ops=0,dual_ops=0,dual_commits=0,clears=0;
   integer collisions=0,invalids=0,depth_rejects=0,reads=0;
   integer blending=0,depth_kept=0,reset_aborts=0,nonclear=0;
+  integer host_priority_stalls=0;
 
   function automatic [7:0] blend_channel(
     input integer src,dst,alpha
@@ -233,6 +234,31 @@ module a0_p144_dual_depth_blend_tb #(
       send(0,0,0,0,1,24'hffffff,24'hffff,2'd0,1,1,8'd255);
     end
     scan_frame();
+    // Same-cycle host read and dual RMW request: op wins, host must
+    // remain unacknowledged during both read and write beats. Invalid
+    // depth mode makes it a non-destructive protocol probe.
+    @(negedge clk);
+    if(!op_ready) $fatal(1,"P144 priority probe must start idle");
+    op_valid=1;op_clear=0;lane0_valid=1;lane1_valid=1;
+    lane0_x=0;lane0_y=0;lane1_x=1;lane1_y=0;
+    depth_compare_op=2'd3;depth_write=1;blend_enable=1;
+    source_rgb=24'hdeaf01;source_depth=24'h000022;source_alpha=8'd127;
+    host_read_valid=1;host_read_x=0;host_read_y=0;
+    if(host_read_ready!==0) $fatal(1,"P144 host wrongly won same-cycle op priority");
+    host_priority_stalls=host_priority_stalls+1;
+    @(posedge clk);#2;
+    if(op_ready || rsp_valid || host_rsp_valid)
+      $fatal(1,"P144 priority probe did not enter RMW read stage");
+    @(negedge clk);op_valid=0;
+    if(host_read_ready!==0 || host_rsp_valid)
+      $fatal(1,"P144 host leaked through active RMW packet");
+    host_priority_stalls=host_priority_stalls+1;
+    @(posedge clk);#2;
+    if(!rsp_valid || rsp_error || rsp_pixel_written!==2'b00 ||
+       host_rsp_valid)
+      $fatal(1,"P144 priority RMW completion corrupted host or data");
+    @(negedge clk);host_read_valid=0;
+    scan_frame();
     // Abort a read-in-flight with reset; response and state must flush.
     @(negedge clk);
     if(!op_ready) $fatal(1,"P144 not idle before reset injection");
@@ -254,6 +280,7 @@ module a0_p144_dual_depth_blend_tb #(
     fill(24'h345678,24'hffffff);
     scan_frame();
     if(ops<450 || dual_ops<300 || dual_commits<3 ||
+       host_priority_stalls<2 ||
        collisions<32 || invalids<64 || depth_rejects<10 ||
        blending<100 || depth_kept<100 || reads<PIXELS*4 ||
        reset_aborts!=1)
