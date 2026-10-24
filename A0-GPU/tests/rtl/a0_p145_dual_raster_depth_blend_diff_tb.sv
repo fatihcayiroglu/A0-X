@@ -3,7 +3,7 @@
 // P139/P138 synchronous FPGA-BRAM backed read/depth/blend/write renderer.
 // Compare EVERY pixel color and depth after clear and each triangle, not
 // cycle latency (new BRAM path legitimately stalls raster).
-module a0_p145_raster_bram_diff_tb #(
+module a0_p145_dual_raster_depth_blend_diff_tb #(
   parameter integer FRAME_WIDTH=4, FRAME_HEIGHT=4
 );
   reg clk=0;always #5 clk=~clk;
