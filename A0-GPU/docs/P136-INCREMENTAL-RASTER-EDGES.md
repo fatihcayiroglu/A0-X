@@ -1,29 +1,36 @@
-# P136 — incremental, exact P38 triangle edge rasterization
+# P136 — exact incremental triangle-edge rasterization
 
-Status: **draft research RTL candidate**; PR merge prohibited until real tests and performance evidence are reviewed. Base is P135 merged into main (`a47ed049`).
+Status: **verified RTL and research ECP5 mapping candidate; latest PR-head regression confirmation required before merge.** Base: P135 main merge `a47ed049`.
 
-## Problem and design
+## Original bottleneck and final architecture
 
-Current P38 computes 3 signed 36-bit triangle edge functions from vertex differences and the 2*x+1, 2*y+1 pixel center **on every scan cycle**. Even when vertices are stable, pixel-position-dependent products remain in its combinational pixel acceptance path. These computations are suitable for incremental interpolation without changing covered pixels:
+The original P38 rasterizer calculated three signed triangle edge functions at **every pixel scan position**, using pixel-position-dependent multiplications:
 
 `E(P) = dx * (2*y+1 - 2*y0) - dy * (2*x+1 - 2*x0)`
 
-`E(x+1,y) = E(x,y) - 2*dy`
+At triangle launch P136 now captures each raw-oriented edge value at pixel center `(0.5, 0.5)` plus signed 18-bit per-pixel and per-row increments:
 
+`E(x+1,y) = E(x,y) - 2*dy`
 `E(0,y+1) = E(0,y) + 2*dx`
 
-At triangle command acceptance, normalize vertex winding exactly as before; snapshot the three initial edge values at pixel center `(0.5,0.5)` and 18-bit signed X/Y steps. Maintain 36-bit signed current and row-start accumulators. Move to the next pixel only if previous P38 would advance, honoring pixel backpressure, wrapping rows and reset. Top-left edge ownership and degenerate-triangle behavior are unchanged.
+**Crucial timing correction:** Preserve raw input winding (A→B, B→C, C→A) and register a *single orientation bit*, rather than muxing vertices before computing origin edge products. For negative winding, the candidate compares each raw edge for `<0` with the reversed top-left edge ownership; for positive winding, compares for `>0` with the original top-left convention. Consequently the signed input-area calculation has no long combinational dependency through the edge math. Scan/valid/done/backpressure, degenerate triangles and reset semantics remain identical.
 
-This **moves pixel-position multiplications to launch-time**; it does not eliminate multiplications from the overall silicon, nor does it make an actual GPU faster without mapping evidence.
+This removes **pixel-dependent edge multiplication** from active raster scanning; it still contains multiplication on triangle setup. It does not establish any real raster throughput or game FPS claim.
 
-## Required before merge
+## Why three iterations were necessary
 
-1. **Differential, cycle-for-cycle** real Icarus comparison against the frozen original **64-bit** P38 reference. Compare ready/valid/pixel x/y/done on every cycle, with 8x8, 7x5, and 4x4 frames; directed dense triangles, both windings, corner signed-16 coordinates, stalls, source register mutation after command, degenerate triangle, and mid-triangle reset.
-2. Preserve independent P130 196-triangle real RTL reference gate.
-3. Preserve inherited P126-P135 regression jobs, especially P132 pixel-by-pixel frame differential, P129 graphics chain, P133 CDC FIFO tests and P134 6 clock ratios. Any newly discovered mismatch is a real failure, not an acceptable test skip.
-4. Map the full P133/P132/P102/P136 chain through genuine Yosys to ECP5-85K and nextpnr `CABGA756`, speed 6, seed 1, `--freq 5`, 4x4 frame, as in P135. Record mapped cells and GPU/host Fmax alongside P135's **36.50 MHz** GPU reference. Do not claim an optimization benefit until measured and compared.
-5. Keep PR draft if any gate is failing, pending or missing; if throughput or fmax regresses, fix or revert.
+All three candidates matched the frozen 64-bit original P38 in cycle-by-cycle RTL tests. But the first mapped design reduced reported GPU Fmax from P135's **36.50 MHz** to **26.28 MHz**: input area → winding normalization mux → wide edge setup was the bottleneck. Parallel precomputation of both normalized winding edge sets improved that to **29.35 MHz**, still a regression. Final raw-oriented edge storage and a single winding flag removed that critical setup cascade, producing **49.91 MHz** final GPU Fmax.
 
-## Limitations
+This is **49.91/36.50 = ~1.367**, or approximately **36.7% higher tool-reported GPU Fmax**, using the comparable ECP5-85K model.
 
-These are simulated logic and **research FPGA mapping** metrics. 36-bit edge interpolation for 8-bit framebuffer colors and 4x4 mapped frame is not a card performance benchmark. No physical GPU, board/clock/CDC pin constraints, pixel-per-second characterization, VRAM, display or PCIe qualification.
+## Qualification
+
+- Actual Icarus simulation against the frozen independent original P130 **64-bit** edge reference: 8x8, 7x5, 4x4 frames; dense and corner triangles, both windings, negative coordinate extremes, pixel backpressure, register mutation during raster, degen triangles, reset midway, and exact cycle-by-cycle ready/valid/x/y/done agreement.
+- Independent original P130 196-triangle cycle-by-cycle regression also passed.
+- Full genuine Yosys ECP5 synthesis plus `nextpnr-ecp5 --85k --package CABGA756 --speed 6 --freq 5 --seed 1 --lpf-allow-unconstrained`: final head `69b55e63` reported **GPU Fmax 49.91016 MHz**, host Fmax **133.12 MHz**. Two independent clocks checked, mapped cells and I/O bounded, minimum tool timing 5 MHz passed.
+- CI now **rejects** proposed GPU Fmax below P135's 36.50 MHz baseline. All required workflows must pass on the **exact final PR head** before merge.
+- P129/P130/P132/P134 inherited regressions are particularly important to catch changed pixels, pipeline behavior, or frame buffer state. No skips accepted.
+
+## Scope limits
+
+These are RTL and **research FPGA mapping estimates**, not a physical GPU, bitstream loaded onto a real board, PCIe implementation, VRAM, physical CDC/skew sign-off, independent pin timing constraints, real raster pixel throughput measurement, measured cooling or graphics benchmarks. The 4x4 mapped model and artificial 5 MHz constraint must never be advertised as gaming-hardware performance.
