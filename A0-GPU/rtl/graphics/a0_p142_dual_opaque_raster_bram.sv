@@ -38,6 +38,21 @@ module a0_p142_dual_opaque_raster_bram #(
     logic scissor_enable_q;
     logic [15:0] scissor_x_q,scissor_y_q,scissor_w_q,scissor_h_q;
 
+    // P143: three 36-bit raw oriented edge values for the first pixel
+    // of a pair, and each row's x=0 origin. A second pixel is obtained
+    // with a signed addition, including when a pair crosses row bounds.
+    logic signed [35:0] edge0_q,edge1_q,edge2_q;
+    logic signed [35:0] row0_q,row1_q,row2_q;
+    logic signed [17:0] step_x0,step_x1,step_x2;
+    logic signed [17:0] step_y0,step_y1,step_y2;
+    logic signed [35:0] launch_e0,launch_e1,launch_e2;
+    logic signed [17:0] launch_x0,launch_x1,launch_x2;
+    logic signed [17:0] launch_y0,launch_y1,launch_y2;
+    logic signed [35:0] lane1_e0,lane1_e1,lane1_e2;
+    logic signed [35:0] lane1_row0,lane1_row1,lane1_row2;
+    logic signed [35:0] next_e0,next_e1,next_e2;
+    logic signed [35:0] next_row0,next_row1,next_row2;
+
     wire [31:0] address0=32'(scan_index);
     wire [31:0] address1=address0+32'd1;
     wire lane1_present=address1<PIXELS;
@@ -68,34 +83,66 @@ module a0_p142_dual_opaque_raster_bram #(
     );
         top_left=(yb<ya) || ((yb==ya) && (xb>xa));
     endfunction
-    function automatic logic covered(
-        input logic [15:0] px,py,
+    function automatic logic hit_edges(
+        input logic signed [35:0] e0,e1,e2,
         input logic signed [15:0] vx0,vy0,vx1,vy1,vx2,vy2,
         input logic negative
     );
-        logic signed [16:0] twice_x,twice_y;
-        logic signed [35:0] e0,e1,e2;
         begin
-            twice_x=($signed({1'b0,px})*17'sd2)+17'sd1;
-            twice_y=($signed({1'b0,py})*17'sd2)+17'sd1;
-            e0=edge_at(vx0,vy0,vx1,vy1,twice_x,twice_y);
-            e1=edge_at(vx1,vy1,vx2,vy2,twice_x,twice_y);
-            e2=edge_at(vx2,vy2,vx0,vy0,twice_x,twice_y);
             if(negative)
-                covered=((e0<0) || ((e0==0) && top_left(vx1,vy1,vx0,vy0))) &&
-                        ((e1<0) || ((e1==0) && top_left(vx2,vy2,vx1,vy1))) &&
-                        ((e2<0) || ((e2==0) && top_left(vx0,vy0,vx2,vy2)));
+                hit_edges=((e0<0) || ((e0==0) && top_left(vx1,vy1,vx0,vy0))) &&
+                          ((e1<0) || ((e1==0) && top_left(vx2,vy2,vx1,vy1))) &&
+                          ((e2<0) || ((e2==0) && top_left(vx0,vy0,vx2,vy2)));
             else
-                covered=((e0>0) || ((e0==0) && top_left(vx0,vy0,vx1,vy1))) &&
-                        ((e1>0) || ((e1==0) && top_left(vx1,vy1,vx2,vy2))) &&
-                        ((e2>0) || ((e2==0) && top_left(vx2,vy2,vx0,vy0)));
+                hit_edges=((e0>0) || ((e0==0) && top_left(vx0,vy0,vx1,vy1))) &&
+                          ((e1>0) || ((e1==0) && top_left(vx1,vy1,vx2,vy2))) &&
+                          ((e2>0) || ((e2==0) && top_left(vx2,vy2,vx0,vy0)));
         end
     endfunction
 
     logic signed [35:0] triangle_area;
-    always_comb
+    always_comb begin
         triangle_area=edge_at(x0,y0,x1,y1,
                               $signed(x2)*17'sd2,$signed(y2)*17'sd2);
+        // Raw edge origins are independent of winding selection. Only
+        // triangle setup uses multiplication; active scan uses adders.
+        launch_e0=edge_at(x0,y0,x1,y1,17'sd1,17'sd1);
+        launch_e1=edge_at(x1,y1,x2,y2,17'sd1,17'sd1);
+        launch_e2=edge_at(x2,y2,x0,y0,17'sd1,17'sd1);
+        launch_x0=-($signed(y1)-$signed(y0))*18'sd2;
+        launch_x1=-($signed(y2)-$signed(y1))*18'sd2;
+        launch_x2=-($signed(y0)-$signed(y2))*18'sd2;
+        launch_y0=($signed(x1)-$signed(x0))*18'sd2;
+        launch_y1=($signed(x2)-$signed(x1))*18'sd2;
+        launch_y2=($signed(x0)-$signed(x2))*18'sd2;
+    end
+    always_comb begin
+        // Step to lane1, which may be the next row's first pixel.
+        if(p0_x==FRAME_WIDTH-1) begin
+            lane1_row0=row0_q+step_y0;
+            lane1_row1=row1_q+step_y1;
+            lane1_row2=row2_q+step_y2;
+            lane1_e0=lane1_row0;lane1_e1=lane1_row1;lane1_e2=lane1_row2;
+        end else begin
+            lane1_row0=row0_q;lane1_row1=row1_q;lane1_row2=row2_q;
+            lane1_e0=edge0_q+step_x0;
+            lane1_e1=edge1_q+step_x1;
+            lane1_e2=edge2_q+step_x2;
+        end
+        // Step once more to the next pair's lane0 position; the
+        // intermediate row start is used for odd-width crossings.
+        if(p1_x==FRAME_WIDTH-1) begin
+            next_row0=lane1_row0+step_y0;
+            next_row1=lane1_row1+step_y1;
+            next_row2=lane1_row2+step_y2;
+            next_e0=next_row0;next_e1=next_row1;next_e2=next_row2;
+        end else begin
+            next_row0=lane1_row0;next_row1=lane1_row1;next_row2=lane1_row2;
+            next_e0=lane1_e0+step_x0;
+            next_e1=lane1_e1+step_x1;
+            next_e2=lane1_e2+step_x2;
+        end
+    end
 
     wire scissor0,scissor1;
     a0_p59_scissor_coverage gate0(
@@ -110,9 +157,11 @@ module a0_p142_dual_opaque_raster_bram #(
         .enable(scissor_enable_q),.covered(scissor1));
 
     wire write0=(state==DRAW) && scissor0 &&
-        covered(p0_x,p0_y,ax,ay,bx,by,cx,cy,negative_winding);
+        hit_edges(edge0_q,edge1_q,edge2_q,
+                  ax,ay,bx,by,cx,cy,negative_winding);
     wire write1=(state==DRAW) && lane1_present && scissor1 &&
-        covered(p1_x,p1_y,ax,ay,bx,by,cx,cy,negative_winding);
+        hit_edges(lane1_e0,lane1_e1,lane1_e2,
+                  ax,ay,bx,by,cx,cy,negative_winding);
 
     wire clear_mode=(state==CLEAR);
     wire draw_mode=(state==DRAW);
@@ -173,6 +222,10 @@ module a0_p142_dual_opaque_raster_bram #(
             draw_color_q<='0;draw_depth_q<='0;
             ax<=0;ay<=0;bx<=0;by<=0;cx<=0;cy<=0;
             negative_winding<=1'b0;
+            edge0_q<=0;edge1_q<=0;edge2_q<=0;
+            row0_q<=0;row1_q<=0;row2_q<=0;
+            step_x0<=0;step_x1<=0;step_x2<=0;
+            step_y0<=0;step_y1<=0;step_y2<=0;
             scissor_enable_q<=0;
             scissor_x_q<=0;scissor_y_q<=0;
             scissor_w_q<=0;scissor_h_q<=0;
@@ -191,6 +244,10 @@ module a0_p142_dual_opaque_raster_bram #(
                 end else if(tri_valid && tri_ready) begin
                     ax<=x0;ay<=y0;bx<=x1;by<=y1;cx<=x2;cy<=y2;
                     negative_winding<=triangle_area<0;
+                    edge0_q<=launch_e0;edge1_q<=launch_e1;edge2_q<=launch_e2;
+                    row0_q<=launch_e0;row1_q<=launch_e1;row2_q<=launch_e2;
+                    step_x0<=launch_x0;step_x1<=launch_x1;step_x2<=launch_x2;
+                    step_y0<=launch_y0;step_y1<=launch_y1;step_y2<=launch_y2;
                     draw_color_q<=tri_color;draw_depth_q<=tri_depth;
                     scissor_enable_q<=scissor_enable;
                     scissor_x_q<=scissor_x;scissor_y_q<=scissor_y;
@@ -205,6 +262,10 @@ module a0_p142_dual_opaque_raster_bram #(
                 if(draw_mode) begin
                     pixel_writes[0]<=write0;
                     pixel_writes[1]<=write1;
+                    if(!last_pair) begin
+                        edge0_q<=next_e0;edge1_q<=next_e1;edge2_q<=next_e2;
+                        row0_q<=next_row0;row1_q<=next_row1;row2_q<=next_row2;
+                    end
                 end
                 if(last_pair) begin
                     scan_index<=0;
