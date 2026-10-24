@@ -23,6 +23,7 @@ module a0_p140_raster_bram_diff_tb #(
   wire dut_wrote,host_read_ready,host_rsp_valid,host_rsp_error;
   wire [23:0] host_color,host_depth;
   integer clears=0,draws=0,checked_pixels=0,ref_written=0,dut_written=0;
+  integer completed_ref_writes=0,completed_bram_writes=0;
 
   a0_triangle_scissor_depth_blend_p102 #(
     .FRAME_WIDTH(FRAME_WIDTH),.FRAME_HEIGHT(FRAME_HEIGHT)
@@ -132,10 +133,12 @@ module a0_p140_raster_bram_diff_tb #(
     input reg signed [15:0] xa,ya,xb,yb,xc,yc
   );
     reg done_a,done_b;
+    integer started_ref,started_bram;
     begin
       @(negedge clk);
       if(!ref_tri_ready || !dut_tri_ready)
         $fatal(1,"P140 not ready for triangle");
+      started_ref=ref_written;started_bram=dut_written;
       x0=xa;y0=ya;x1=xb;y1=yb;x2=xc;y2=yc;
       tri_valid=1;
       @(negedge clk);
@@ -153,6 +156,11 @@ module a0_p140_raster_bram_diff_tb #(
         $fatal(1,"P140 triangle not completed ref=%b dut=%b",done_a,done_b);
       draws=draws+1;
       compare_frame();
+      if(ref_written-started_ref != dut_written-started_bram)
+        $fatal(1,"P140 completed triangle writes differ: ref=%0d BRAM=%0d draw=%0d",
+          ref_written-started_ref,dut_written-started_bram,draws);
+      completed_ref_writes=completed_ref_writes+(ref_written-started_ref);
+      completed_bram_writes=completed_bram_writes+(dut_written-started_bram);
     end
   endtask
 
@@ -190,11 +198,11 @@ module a0_p140_raster_bram_diff_tb #(
     depth_compare_op=0;depth_write=1;blend_enable=0;scissor_enable=0;
     draw(-16'sd5,-16'sd5,16'sd20,-16'sd5,-16'sd5,16'sd20);
     if(clears!=2 || draws!=5 || checked_pixels<6*FRAME_WIDTH*FRAME_HEIGHT ||
-       ref_written<5 || dut_written<5 || ref_written!=dut_written)
+       completed_ref_writes<5 || completed_ref_writes!=completed_bram_writes)
       $fatal(1,"P140 missing coverage clears=%0d draws=%0d checked=%0d writes ref=%0d dut=%0d",
-        clears,draws,checked_pixels,ref_written,dut_written);
+        clears,draws,checked_pixels,completed_ref_writes,completed_bram_writes);
     $display("P140_RASTER_BRAM_FRAME_EQUIVALENCE_PASS size=%0dx%0d clears=%0d draws=%0d checked=%0d ref_writes=%0d bram_writes=%0d",
-      FRAME_WIDTH,FRAME_HEIGHT,clears,draws,checked_pixels,ref_written,dut_written);
+      FRAME_WIDTH,FRAME_HEIGHT,clears,draws,checked_pixels,completed_ref_writes,completed_bram_writes);
     $finish;
   end
   initial begin #6000000; $fatal(1,"P140 RTL differential watchdog"); end
