@@ -29,14 +29,12 @@ module a0_triangle_coverage_p38 #(
     logic [15:0] scan_x, scan_y;
     logic signed [15:0] ax, ay, bx, by, cx, cy;
     logic signed [35:0] input_area;
-    logic hit;
+    logic hit, winding_negative;
 
-    logic signed [15:0] launch_bx, launch_by, launch_cx, launch_cy;
+    // Preserve original input edge orientation. Negative winding uses the
+    // opposite signed-side test and reverse top-left ownership; this avoids
+    // chaining area multiplication into vertex multiplexers or edge math.
     logic signed [35:0] initial_e0, initial_e1, initial_e2;
-    // Calculate both input winding orders in parallel. Do NOT feed
-    // input_area -> vertex mux -> wide edge multipliers in one clock.
-    logic signed [35:0] launch_e_ab, launch_e_bc, launch_e_ca;
-    logic signed [35:0] launch_e_ac, launch_e_cb, launch_e_ba;
     logic signed [35:0] edge0, edge1, edge2;
     logic signed [35:0] row0, row1, row2;
     logic signed [17:0] step_x0, step_x1, step_x2;
@@ -79,35 +77,27 @@ module a0_triangle_coverage_p38 #(
     always_comb begin
         input_area = edge_at(x0, y0, x1, y1,
                              $signed(x2) * 17'sd2, $signed(y2) * 17'sd2);
-        launch_bx = input_area < 0 ? x2 : x1;
-        launch_by = input_area < 0 ? y2 : y1;
-        launch_cx = input_area < 0 ? x1 : x2;
-        launch_cy = input_area < 0 ? y1 : y2;
+        initial_e0 = edge_at(x0,y0,x1,y1,17'sd1,17'sd1);
+        initial_e1 = edge_at(x1,y1,x2,y2,17'sd1,17'sd1);
+        initial_e2 = edge_at(x2,y2,x0,y0,17'sd1,17'sd1);
 
-        // Parallel origin edge setup: only the final 36-bit mux is
-        // dependent on signed input_area; neither multiplier is.
-        launch_e_ab = edge_at(x0,y0,x1,y1,17'sd1,17'sd1);
-        launch_e_bc = edge_at(x1,y1,x2,y2,17'sd1,17'sd1);
-        launch_e_ca = edge_at(x2,y2,x0,y0,17'sd1,17'sd1);
-        launch_e_ac = edge_at(x0,y0,x2,y2,17'sd1,17'sd1);
-        launch_e_cb = edge_at(x2,y2,x1,y1,17'sd1,17'sd1);
-        launch_e_ba = edge_at(x1,y1,x0,y0,17'sd1,17'sd1);
-        initial_e0 = input_area < 0 ? launch_e_ac : launch_e_ab;
-        initial_e1 = input_area < 0 ? launch_e_cb : launch_e_bc;
-        initial_e2 = input_area < 0 ? launch_e_ba : launch_e_ca;
+        // P136 orientation-invariant edge interpolation: E has the raw
+        // input winding; every step is independent of input_area sign.
+        launch_step_x0 = -($signed(y1)-$signed(y0)) * 18'sd2;
+        launch_step_x1 = -($signed(y2)-$signed(y1)) * 18'sd2;
+        launch_step_x2 = -($signed(y0)-$signed(y2)) * 18'sd2;
+        launch_step_y0 = ($signed(x1)-$signed(x0)) * 18'sd2;
+        launch_step_y1 = ($signed(x2)-$signed(x1)) * 18'sd2;
+        launch_step_y2 = ($signed(x0)-$signed(x2)) * 18'sd2;
 
-        // Move one pixel in X => sample_x2 += 2 and E -= 2*dy.
-        // Move one row in Y at x=0 => sample_y2 += 2 and E += 2*dx.
-        launch_step_x0 = -($signed(launch_by)-$signed(y0)) * 18'sd2;
-        launch_step_x1 = -($signed(launch_cy)-$signed(launch_by)) * 18'sd2;
-        launch_step_x2 = -($signed(y0)-$signed(launch_cy)) * 18'sd2;
-        launch_step_y0 = ($signed(launch_bx)-$signed(x0)) * 18'sd2;
-        launch_step_y1 = ($signed(launch_cx)-$signed(launch_bx)) * 18'sd2;
-        launch_step_y2 = ($signed(x0)-$signed(launch_cx)) * 18'sd2;
-
-        hit = ((edge0 > 0) || ((edge0 == 0) && top_left(ax, ay, bx, by))) &&
-              ((edge1 > 0) || ((edge1 == 0) && top_left(bx, by, cx, cy))) &&
-              ((edge2 > 0) || ((edge2 == 0) && top_left(cx, cy, ax, ay)));
+        if (winding_negative)
+            hit = ((edge0 < 0) || ((edge0 == 0) && top_left(bx, by, ax, ay))) &&
+                  ((edge1 < 0) || ((edge1 == 0) && top_left(cx, cy, bx, by))) &&
+                  ((edge2 < 0) || ((edge2 == 0) && top_left(ax, ay, cx, cy)));
+        else
+            hit = ((edge0 > 0) || ((edge0 == 0) && top_left(ax, ay, bx, by))) &&
+                  ((edge1 > 0) || ((edge1 == 0) && top_left(bx, by, cx, cy))) &&
+                  ((edge2 > 0) || ((edge2 == 0) && top_left(cx, cy, ax, ay)));
         tri_ready   = rst_n && !active;
         pixel_valid = rst_n && active && hit;
         pixel_x     = scan_x;
@@ -122,6 +112,7 @@ module a0_triangle_coverage_p38 #(
             ax <= '0; ay <= '0;
             bx <= '0; by <= '0;
             cx <= '0; cy <= '0;
+            winding_negative <= 1'b0;
             done <= 1'b0;
             edge0 <= '0;edge1 <= '0;edge2 <= '0;
             row0 <= '0;row1 <= '0;row2 <= '0;
@@ -133,10 +124,11 @@ module a0_triangle_coverage_p38 #(
                 if (tri_valid && tri_ready) begin
                     ax <= x0;
                     ay <= y0;
-                    bx <= launch_bx;
-                    by <= launch_by;
-                    cx <= launch_cx;
-                    cy <= launch_cy;
+                    bx <= x1;
+                    by <= y1;
+                    cx <= x2;
+                    cy <= y2;
+                    winding_negative <= (input_area < 0);
                     scan_x <= '0;
                     scan_y <= '0;
                     edge0 <= initial_e0;edge1 <= initial_e1;edge2 <= initial_e2;
