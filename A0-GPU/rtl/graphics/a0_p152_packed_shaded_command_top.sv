@@ -69,10 +69,10 @@ module a0_p152_packed_shaded_command_top #(
     .FRAME_WIDTH(FRAME_WIDTH),.FRAME_HEIGHT(FRAME_HEIGHT)
   ) full_16bit_raster(
     .clk(clk),.rst_n(rst_n),
-    .clear_valid(clear_launch),.clear_ready(core_clear_ready),
+    .clear_valid(clear_request),.clear_ready(core_clear_ready),
     .clear_color(clear_rgb_q),.clear_depth(clear_depth_q),
     .clear_done(core_clear_done),
-    .tri_valid(tri_launch),.tri_ready(core_tri_ready),
+    .tri_valid(tri_request),.tri_ready(core_tri_ready),
     .tri_done(core_tri_done),
     .x0(x0_q),.y0(y0_q),.x1(x1_q),.y1(y1_q),.x2(x2_q),.y2(y2_q),
     .tri_depth(tri_depth_q),
@@ -96,7 +96,7 @@ module a0_p152_packed_shaded_command_top #(
     .scissor_w(scissor_w_q),.scissor_h(scissor_h_q),
     .initialized(core_initialized),.busy(core_busy),.fault(core_fault),
     .pixel_writes(core_pixel_writes),
-    .host_read_valid(host_launch),.host_read_ready(core_host_ready),
+    .host_read_valid(host_request),.host_read_ready(core_host_ready),
     .host_read_x(host_x_q),.host_read_y(host_y_q),
     .host_rsp_valid(core_host_valid),.host_rsp_error(core_host_error),
     .host_rsp_color(core_host_color),.host_rsp_depth(core_host_depth)
