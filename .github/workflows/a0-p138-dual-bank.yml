@@ -1,0 +1,151 @@
+name: A0-X P138 two-bank scratchpad actual RTL and ECP5 route
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv'
+      - 'A0-GPU/tests/rtl/a0_p138_dual_bank_framebuffer_tb.sv'
+      - 'A0-GPU/docs/P138-DUAL-BANK-FRAMEBUFFER.md'
+      - '.github/workflows/a0-p138-dual-bank.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv'
+      - 'A0-GPU/tests/rtl/a0_p138_dual_bank_framebuffer_tb.sv'
+      - '.github/workflows/a0-p138-dual-bank.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p138-real-dual-bank-rtl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Icarus Verilog with bounded retries
+        run: |
+          set -euo pipefail
+          if ! timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog; then
+            timeout 240s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog
+          fi
+          iverilog -V | head -2
+      - name: Differential dual-bank read/write, collision, invalid and reset tests
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P138/rtl
+          for shape in '4 4' '7 5' '8 8'; do
+            read -r w h <<< "$shape"
+            id="${w}x${h}"
+            iverilog -g2012 -s a0_p138_dual_bank_framebuffer_tb \
+              -Pa0_p138_dual_bank_framebuffer_tb.FRAME_WIDTH="$w" \
+              -Pa0_p138_dual_bank_framebuffer_tb.FRAME_HEIGHT="$h" \
+              -o "EVIDENCE/P138/rtl/$id.vvp" \
+              A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv \
+              A0-GPU/tests/rtl/a0_p138_dual_bank_framebuffer_tb.sv \
+              2>&1 | tee "EVIDENCE/P138/rtl/$id-compile.log"
+            timeout 120s vvp "EVIDENCE/P138/rtl/$id.vvp" | tee "EVIDENCE/P138/rtl/$id.log"
+            grep -q '^P138_DUAL_BANK_GOLDEN_PASS ' "EVIDENCE/P138/rtl/$id.log"
+          done
+      - name: Enforce real dual-issue throughput and protocol coverage
+        run: |
+          python3 - <<'PY'
+          import json,re
+          from pathlib import Path
+          p=Path('EVIDENCE/P138/rtl')
+          shapes={}
+          pattern=r'^P138_DUAL_BANK_GOLDEN_PASS pixels=(\d+) checks=(\d+) accepted=(\d+) dual=(\d+) conflicts=(\d+) reads=(\d+) writes=(\d+) invalid=(\d+)$'
+          for shape,pixels in [('4x4',16),('7x5',35),('8x8',64)]:
+              log=(p/f'{shape}.log').read_text()
+              records=re.findall(pattern,log,re.M)
+              assert len(records)==1,(shape,log[-400:])
+              px,checks,accepted,dual,conflicts,reads,writes,invalid=map(int,records[0])
+              assert px==pixels and checks>=500 and accepted>=1000 and dual>=500
+              assert conflicts>=2 and reads>=100 and writes>=250
+              if pixels==35: assert invalid>=2
+              shapes[shape]={'pixels':px,'cycles_checked':checks,
+                'accepted_ops':accepted,'simultaneous_dual_acceptances':dual,
+                'same_bank_collisions':conflicts,'reads':reads,
+                'writes':writes,'invalid_index_errors':invalid}
+          (p/'qualification.json').write_text(json.dumps({
+              'milestone':'P138','status':'PASS','simulator':'Icarus Verilog',
+              'fixed_two_bank_48bit_storage':True,
+              'P102_renderer_integrated':False,
+              'real_GPU_pixel_throughput_measured':False,
+              'shapes':shapes
+          },indent=2))
+          print('P138_DUAL_BANK_RTL_MATRIX_PASS three shapes and nonvacuous 2/cycle banks')
+          PY
+      - name: Upload simulation and golden response evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-p138-dual-bank-rtl
+          path: EVIDENCE/P138/rtl/
+          if-no-files-found: warn
+  p138-ecp5-85k-bank-fit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install genuine FPGA synthesis and route tools
+        run: |
+          set -euo pipefail
+          if ! timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5; then
+            timeout 300s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5
+          fi
+          yosys -V
+          nextpnr-ecp5 --version
+      - name: Synthesize actual banked storage and arbitration, not a test stub
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P138/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv; hierarchy -check -top a0_p138_dual_bank_framebuffer -chparam FRAME_WIDTH 4 -chparam FRAME_HEIGHT 4; synth_ecp5 -top a0_p138_dual_bank_framebuffer -json EVIDENCE/P138/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P138/route/yosys.log
+      - name: Real ECP5-85K placement and routing with research IO pins
+        run: |
+          set -euo pipefail
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P138/route/netlist.json \
+            --textcfg EVIDENCE/P138/route/route.config \
+            --report EVIDENCE/P138/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P138/route/nextpnr.log
+      - name: Fail closed on incomplete mapping and missing timing evidence
+        run: |
+          python3 - <<'PY'
+          import json,collections
+          from pathlib import Path
+          p=Path('EVIDENCE/P138/route')
+          top=json.loads((p/'netlist.json').read_text())['modules']['a0_p138_dual_bank_framebuffer']
+          io=sum(len(v['bits']) for v in top['ports'].values())
+          assert 0<io<=256,io
+          counts=collections.Counter(v['type'] for v in top['cells'].values())
+          assert counts
+          assert not any(t.startswith('$') or t.startswith('a0_') or 'LATCH' in t.upper() for t in counts), counts
+          route=json.loads((p/'route.json').read_text())
+          for kind in ('TRELLIS_COMB','TRELLIS_IO'):
+              util=route['utilization'][kind]
+              assert 0<util['used']<=util['available'],kind
+          clocks=route['fmax']
+          assert any('clk' in name for name in clocks)
+          for name,c in clocks.items():
+              assert c['constraint']>=5 and c['achieved']>=c['constraint'],(name,c)
+          result={'milestone':'P138','status':'PASS',
+                  'actual_ecp5_synthesis_and_pnr':True,'top_io_bits':io,
+                  'mapped_cell_count':sum(counts.values()),'cell_types':counts,
+                  'reported_fmax':clocks,
+                  'onboard_RAM_inference_confirmed':counts.get('DP16KD',0)>0,
+                  'physical_IO_and_board_qualified':False,
+                  'P102_renderer_integrated':False,
+                  'real_GPU_pixel_throughput_measured':False}
+          (p/'qualification.json').write_text(json.dumps(result,indent=2))
+          print('P138_ECP5_DUAL_BANK_FIT_PASS mapped banked RTL only; NOT a physical GPU')
+          print('P138_REAL_ECP5_RAM_PRIMITIVES',counts.get('DP16KD',0))
+          PY
+      - name: Upload mapped netlist, timing, and resource evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-p138-real-ecp5-fit
+          path: EVIDENCE/P138/route/
+          if-no-files-found: warn
