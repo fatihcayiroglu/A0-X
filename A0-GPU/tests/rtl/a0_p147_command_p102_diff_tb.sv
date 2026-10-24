@@ -142,9 +142,17 @@ module a0_p147_command_p102_diff_tb #(
           $fatal(1,"P147 command did not finish status=%h bit=%0d",status,bit_index);
         if(status[2])$fatal(1,"P147 error/fault during draw");
       end
-      if(!ref_initialized || (bit_index==3&&!ref_clear_seen) ||
-         (bit_index==4&&!ref_tri_seen))
-        $fatal(1,"P147 reference command not completed");
+      // P102 and dual-BRAM P146 have DIFFERENT operation latencies.
+      // Wait for each engine's own completion; never require same edge.
+      count=0;
+      while(!ref_initialized ||
+            (bit_index==3 && !ref_clear_seen) ||
+            (bit_index==4 && !ref_tri_seen)) begin
+        @(negedge clk);
+        count=count+1;
+        if(count>12*PIXELS+70)
+          $fatal(1,"P147 P102 original reference did not complete independently");
+      end
     end
   endtask
   task automatic configure_triangle(
