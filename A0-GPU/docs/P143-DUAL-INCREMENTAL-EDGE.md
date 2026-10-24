@@ -19,4 +19,18 @@ Two one-position advances create the **next pair's** starting edge. For an odd-w
 - Full real Yosys ECP5 technology mapping and nextpnr ECP5-85K place-and-route, exact same 4x4 CABGA756 speed6 seed1 and `--freq 5 --lpf-allow-unconstrained` as P142. Require >=2 genuine DP16KD, no unmapped cells/latches, external research IO <=384, and **GPU mapped Fmax >=27.44 MHz**. Record whether actually improved, don't assume.
 - Keep P126/P127/P132/P134 and other triggered inherited regressions successful on the exact latest head. Never bypass evidence or merge on a failing gate.
 
+## Real RTL and ECP5 evidence — 24 October 2026
+
+The first actual P143 commit `e4787f38` completed **six successful GitHub Actions workflows**: P126, P127, P132, P134, P142 and P143. The new P143 Icarus differential on `1x9`, `9x1`, `6x6` was PASS, in addition to the inherited P142 independent original-P102 full-frame comparison on `4x4`, `7x5`, `8x8`.
+
+| Additional frame | P102 three full opaque draws | P143 three full opaque draws | Pixels compared |
+|---|---:|---:|---:|
+| 1×9 | 27 clocks | 15 clocks | 72 |
+| 9×1 | 27 clocks | 15 clocks | 72 |
+| 6×6 | 108 clocks | 54 clocks | 288 |
+
+The genuine Yosys ECP5-85K mapping plus nextpnr route (4×4, CABGA756, speed6, seed1, `--freq 5`, pins unconstrained) had **4 actual `DP16KD` RAM primitives**, no unmapped logic, and tool-reported clock **Fmax 37.4056 MHz**, compared with P142's **27.4492 MHz** using the same research configuration: **about 36.3% higher estimated Fmax** while maintaining two opaque raster pixel evaluations per clock. External research interface remains 353 bits; no physical pin constraints exist.
+
+This clock estimate and RTL cycle rate are separate facts; do not multiply them into an asserted actual screen/game framerate, board-level pixel throughput, or physical GPU capability. The final documentation head requires its own same-commit CI results before PR merge.
+
 This prototype still does not implement programmatic shaders, alpha/depth-dependent dual lanes, hardware PCIe/VRAM/display/driver, physical CDC sign-off, real board operation or FPS measurements.
