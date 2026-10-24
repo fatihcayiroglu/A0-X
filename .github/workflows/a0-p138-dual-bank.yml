@@ -60,7 +60,7 @@ jobs:
               assert len(records)==1,(shape,log[-400:])
               px,checks,accepted,dual,conflicts,reads,writes,invalid=map(int,records[0])
               assert px==pixels and checks>=500 and accepted>=1000 and dual>=500
-              assert conflicts>=2 and reads>=100 and writes>=250
+              assert conflicts>=130 and reads>=100 and writes>=250
               if pixels==35: assert invalid>=2
               shapes[shape]={'pixels':px,'cycles_checked':checks,
                 'accepted_ops':accepted,'simultaneous_dual_acceptances':dual,
