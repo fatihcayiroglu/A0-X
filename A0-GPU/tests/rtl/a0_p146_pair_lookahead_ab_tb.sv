@@ -196,6 +196,10 @@ module a0_p146_pair_lookahead_ab_tb #(
       tri_color=24'hff00ff;tri_depth=24'h000001;
       launch_cycle=cycle_counter;old_finished=-1;new_finished=-1;
       done_a=ref_tri_done;done_b=dut_tri_done;done_old=old_tri_done;
+      // A zero-area triangle may assert tri_done immediately at launch.
+      // Such a completed no-pixel draw legitimately has zero elapsed clocks.
+      if(done_b)new_finished=0;
+      if(done_old)old_finished=0;
       // Concurrent debug access to the SAME coordinate during active
       // triangle processing exercises lane-1 arbitration/backpressure.
       host_read_valid=0;
