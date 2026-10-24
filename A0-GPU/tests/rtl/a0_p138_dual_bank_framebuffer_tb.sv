@@ -153,6 +153,18 @@ module a0_p138_dual_bank_framebuffer_tb #(
     if(rsp1_valid || req1_ready)
       $fatal(1,"P138 same-bank dual read must stall lane 1");
     step(0,0,0,0,1,0,2,0);
+    // Extended lane1-stall/retry stress: every same-bank operation must
+    // be rejected and retried exactly once, across read/write variations.
+    for(integer k=0;k<128;k=k+1) begin
+      step(1,(k%3)!=0,2*(k%((PIXELS+1)/2)),payload(k,9),
+           1,(k%4)!=0,2*((k+1)%((PIXELS+1)/2)),payload(k,10));
+      if(req1_ready || rsp1_valid)
+        $fatal(1,"P138 lane1 accepted same-bank collision at iteration %0d",k);
+      step(0,0,0,0,
+           1,(k%4)!=0,2*((k+1)%((PIXELS+1)/2)),payload(k,10));
+      if(!req1_ready || !rsp1_valid)
+        $fatal(1,"P138 deferred lane1 retry was not accepted at iteration %0d",k);
+    end
     scan_all(0);
 
     // Invalid addresses are acknowledged with errors rather than hanging.
@@ -179,7 +191,7 @@ module a0_p138_dual_bank_framebuffer_tb #(
     step(0,0,0,0,0,0,0,0);
     if(rsp0_valid || rsp1_valid)
       $fatal(1,"P138 idle response pulse not flushed");
-    if(checks<500 || accepted<1000 || dual<500 || conflicts<2 ||
+    if(checks<500 || accepted<1000 || dual<500 || conflicts<130 ||
        read_count<100 || write_count<250 || reset_count<4)
       $fatal(1,"P138 insufficient exercised paths checks=%0d accepted=%0d dual=%0d conflict=%0d read=%0d write=%0d resets=%0d",
          checks,accepted,dual,conflicts,read_count,write_count,reset_count);
