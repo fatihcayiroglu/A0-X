@@ -25,6 +25,15 @@ module a0_p152_shader_triangle_diff_tb;
   wire [23:0] ref_color,ref_depth;
   reg [23:0] expected_color=24'h18a0c8;
   integer pixels=0,draws=0,dual=0;
+  reg gpu_clear_seen=0,gpu_draw_seen=0,ref_draw_seen=0;
+  always @(posedge clk)begin
+    if(!rst_n)begin gpu_clear_seen<=0;gpu_draw_seen<=0;ref_draw_seen<=0;end
+    else begin
+      if(clear_done)gpu_clear_seen<=1;
+      if(shaded_tri_done)gpu_draw_seen<=1;
+      if(ref_tri_done)ref_draw_seen<=1;
+    end
+  end
   a0_p152_shaded_triangle_prepass #(.FRAME_WIDTH(4),.FRAME_HEIGHT(4)) dut(
     .clk(clk),.rst_n(rst_n),.clear_valid(clear_valid),.clear_ready(clear_ready),
     .clear_done(clear_done),.clear_color(clear_color),.clear_depth(clear_depth),
@@ -110,7 +119,7 @@ module a0_p152_shader_triangle_diff_tb;
     @(negedge clk);clear_valid=1;
     @(negedge clk);clear_valid=0;
     n=0;
-    while(!clear_done || !ref_initialized)begin
+    while(!gpu_clear_seen || !ref_initialized)begin
       @(negedge clk);n=n+1;
       if(n>180)$fatal(1,"P152 clear timed out");
     end
@@ -122,7 +131,7 @@ module a0_p152_shader_triangle_diff_tb;
     if(!shaded_tri_ready || !ref_tri_ready)$fatal(1,"P152 not ready");
     @(negedge clk);shaded_tri_valid=0;
     n=0;
-    while(!shaded_tri_done || !ref_tri_done)begin
+    while(!gpu_draw_seen || !ref_draw_seen)begin
       @(negedge clk);n=n+1;
       if(n>360)$fatal(1,"P152 shaded triangle never completed");
     end
