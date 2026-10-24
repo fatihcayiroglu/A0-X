@@ -33,6 +33,10 @@ module a0_triangle_coverage_p38 #(
 
     logic signed [15:0] launch_bx, launch_by, launch_cx, launch_cy;
     logic signed [35:0] initial_e0, initial_e1, initial_e2;
+    // Calculate both input winding orders in parallel. Do NOT feed
+    // input_area -> vertex mux -> wide edge multipliers in one clock.
+    logic signed [35:0] launch_e_ab, launch_e_bc, launch_e_ca;
+    logic signed [35:0] launch_e_ac, launch_e_cb, launch_e_ba;
     logic signed [35:0] edge0, edge1, edge2;
     logic signed [35:0] row0, row1, row2;
     logic signed [17:0] step_x0, step_x1, step_x2;
@@ -80,9 +84,17 @@ module a0_triangle_coverage_p38 #(
         launch_cx = input_area < 0 ? x1 : x2;
         launch_cy = input_area < 0 ? y1 : y2;
 
-        initial_e0 = edge_at(x0,y0,launch_bx,launch_by,17'sd1,17'sd1);
-        initial_e1 = edge_at(launch_bx,launch_by,launch_cx,launch_cy,17'sd1,17'sd1);
-        initial_e2 = edge_at(launch_cx,launch_cy,x0,y0,17'sd1,17'sd1);
+        // Parallel origin edge setup: only the final 36-bit mux is
+        // dependent on signed input_area; neither multiplier is.
+        launch_e_ab = edge_at(x0,y0,x1,y1,17'sd1,17'sd1);
+        launch_e_bc = edge_at(x1,y1,x2,y2,17'sd1,17'sd1);
+        launch_e_ca = edge_at(x2,y2,x0,y0,17'sd1,17'sd1);
+        launch_e_ac = edge_at(x0,y0,x2,y2,17'sd1,17'sd1);
+        launch_e_cb = edge_at(x2,y2,x1,y1,17'sd1,17'sd1);
+        launch_e_ba = edge_at(x1,y1,x0,y0,17'sd1,17'sd1);
+        initial_e0 = input_area < 0 ? launch_e_ac : launch_e_ab;
+        initial_e1 = input_area < 0 ? launch_e_cb : launch_e_bc;
+        initial_e2 = input_area < 0 ? launch_e_ba : launch_e_ca;
 
         // Move one pixel in X => sample_x2 += 2 and E -= 2*dy.
         // Move one row in Y at x=0 => sample_y2 += 2 and E += 2*dx.
