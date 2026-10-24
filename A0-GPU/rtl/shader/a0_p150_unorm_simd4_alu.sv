@@ -36,7 +36,7 @@ module a0_p150_unorm_simd4_alu(
     logic [8:0] sum;
     logic [16:0] numerator;
     begin
-      sum=9'({1'b0,a})+9'({1'b0,b});
+      sum={1'b0,a}+{1'b0,b};
       numerator=0;
       case(op)
         3'd0:eval_lane=a;
