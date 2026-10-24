@@ -1,0 +1,141 @@
+name: A0-X P150 exact SIMD4 UNORM ALU and real ECP5 route
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv'
+      - 'A0-GPU/tests/rtl/a0_p150_unorm_simd4_alu_tb.sv'
+      - 'A0-GPU/docs/P150-UNORM-SIMD4-ALU.md'
+      - '.github/workflows/a0-p150-unorm-simd4.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv'
+      - 'A0-GPU/tests/rtl/a0_p150_unorm_simd4_alu_tb.sv'
+      - '.github/workflows/a0-p150-unorm-simd4.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p150-independent-exact-RTL:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual Icarus tool
+        run: |
+          set -euo pipefail
+          if ! timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog; then
+            timeout 240s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog
+          fi
+          iverilog -V | head -2
+      - name: Execute 6912 exact boundary and 2048 independent randomized packet checks
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P150/rtl
+          iverilog -g2012 -s a0_p150_unorm_simd4_alu_tb \
+            -o EVIDENCE/P150/rtl/p150.vvp \
+            A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv \
+            A0-GPU/tests/rtl/a0_p150_unorm_simd4_alu_tb.sv \
+            2>&1 | tee EVIDENCE/P150/rtl/compile.log
+          timeout 120s vvp EVIDENCE/P150/rtl/p150.vvp | tee EVIDENCE/P150/rtl/run.log
+          grep -q '^P150_UNORM_SIMD4_REAL_RTL_PASS ' EVIDENCE/P150/rtl/run.log
+      - name: Fail closed on skipped coverage, missing operations or response loss
+        run: |
+          python3 - <<'PY'
+          import re,json
+          from pathlib import Path
+          p=Path('EVIDENCE/P150/rtl')
+          log=(p/'run.log').read_text()
+          pattern=r'^P150_UNORM_SIMD4_REAL_RTL_PASS boundary=(\d+) randomized=(\d+) consecutive_cycle_inputs=(\d+) stalled_response_cycles=(\d+) after_reset_replies=(\d+) modes=(\d+) lane_masks=(\d+)$'
+          rows=re.findall(pattern,log,re.M)
+          assert len(rows)==1,(rows,log[-500:])
+          bound,random,stream,stalls,post,ops,masks=map(int,rows[0])
+          assert bound==6912 and random==2048 and stream==128
+          assert stalls>=18 and post==16 and ops==8 and masks==4
+          (p/'qualification.json').write_text(json.dumps({
+             'status':'PASS','milestone':'P150','actual_iverilog':True,
+             'independent_integer_div255_oracle':True,
+             'directed_endpoint_ops':bound,'deterministic_random_ops':random,
+             'continuous_one_vector_per_cycle_inputs':stream,
+             'held_response_stalls':stalls,'after_reset_matched_replies':post,
+             'real_GPU_shader_program_executor':False,
+             'physical_board_tested':False
+          },indent=2))
+          print('P150_INDEPENDENT_EXACT_UNORM_SIMD4_ORACLE_PASS actual RTL')
+          PY
+      - name: Upload real RTL logs even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p150-independent-rtl-oracle
+          path: EVIDENCE/P150/rtl/
+          if-no-files-found: warn
+  p150-real-ECP5-shader-ALU:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install genuine FPGA route tools
+        run: |
+          set -euo pipefail
+          if ! timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5; then
+            timeout 300s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5
+          fi
+          yosys -V
+          nextpnr-ecp5 --version
+      - name: Synthesize all four real UNORM8 lanes and output flow control
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P150/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv; hierarchy -check -top a0_p150_unorm_simd4_alu; synth_ecp5 -top a0_p150_unorm_simd4_alu -json EVIDENCE/P150/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P150/route/yosys.log
+      - name: Real ECP5-85K place and route fixed research configuration
+        run: |
+          set -euo pipefail
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P150/route/netlist.json \
+            --textcfg EVIDENCE/P150/route/route.config \
+            --report EVIDENCE/P150/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P150/route/nextpnr.log
+      - name: Verify mapped ALU not optimized away, no latches, real timing
+        run: |
+          python3 - <<'PY'
+          import collections,json
+          from pathlib import Path
+          p=Path('EVIDENCE/P150/route')
+          m=json.loads((p/'netlist.json').read_text())['modules']['a0_p150_unorm_simd4_alu']
+          pins=sum(len(v['bits']) for v in m['ports'].values())
+          assert pins==132,('P150 RTL pin budget changed',pins)
+          c=collections.Counter(x['type'] for x in m['cells'].values())
+          assert c.get('TRELLIS_COMB',0)>=20,('Shader arithmetic optimized away?',c)
+          assert c.get('TRELLIS_FF',0)>=40,('Registered response missing?',c)
+          assert not any(x.startswith('$') or x.startswith('a0_') or 'LATCH' in x.upper() for x in c),c
+          route=json.loads((p/'route.json').read_text())
+          for k in ('TRELLIS_IO','TRELLIS_COMB','TRELLIS_FF'):
+              u=route['utilization'][k]
+              assert 0<u['used']<=u['available'],(k,u)
+          clocks=route['fmax']
+          assert clocks and any('clk' in key for key in clocks)
+          for key,v in clocks.items():
+              assert v['constraint']>=5 and v['achieved']>=v['constraint'],(key,v)
+          (p/'qualification.json').write_text(json.dumps({
+             'milestone':'P150','status':'PASS','real_ecp5_route':True,
+             'rtl_port_bits':pins,'mapped_LUT_cells':c.get('TRELLIS_COMB',0),
+             'mapped_FF_cells':c.get('TRELLIS_FF',0),
+             'four_RGBA_components':True,'fmax_tool_estimate':clocks,
+             'PCIe':False,'programmable_shader_ISA':False,
+             'physical_board_tested':False
+          },indent=2))
+          print('P150_REAL_ECP5_SHADER_ALU_ROUTE_PASS exact vector datapath')
+          print('P150_FPGA_COMB_CELLS',c['TRELLIS_COMB'])
+          for name,v in clocks.items():print('P150_ALU_RESEARCH_FMAX_MHZ',v['achieved'])
+          PY
+      - name: Upload real ECP5 reports and failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p150-real-ecp5-shader-alu
+          path: EVIDENCE/P150/route/
+          if-no-files-found: warn
