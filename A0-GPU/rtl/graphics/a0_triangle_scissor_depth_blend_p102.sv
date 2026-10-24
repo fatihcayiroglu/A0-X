@@ -44,6 +44,13 @@ module a0_triangle_scissor_depth_blend_p102 #(
     logic raster_ready,raster_pixel_valid,raster_done;
     logic [15:0] raster_x,raster_y;
     logic [ADDR_BITS-1:0] raster_index;
+    // P137: the P38 raster visits every framebuffer location in linear
+    // row-major order, whether covered or uncovered. Track that index at
+    // the same clock edge as the raster coordinate state instead of a
+    // per-pixel (raster_y*FRAME_WIDTH)+raster_x combinational multiplier.
+    // The engine hardwires pixel_ready=1: if backpressure is introduced,
+    // update this counter only on actual P38 scan acceptance.
+    logic [ADDR_BITS-1:0] scan_index_q;
     logic scissor_pass,depth_pass;
     logic [23:0] blended_color;
     logic write_pixel;
@@ -52,7 +59,22 @@ module a0_triangle_scissor_depth_blend_p102 #(
     assign tri_ready = rst_n && initialized && !clearing && !clear_valid && raster_ready;
     assign busy = clearing || !raster_ready;
     assign tri_done = rst_n && raster_done;
-    assign raster_index = ADDR_BITS'((raster_y*FRAME_WIDTH)+raster_x);
+    assign raster_index = scan_index_q;
+    always_ff @(posedge clk) begin
+        if (!rst_n)
+            scan_index_q <= '0;
+        else if (tri_valid && tri_ready)
+            // P38 simultaneously begins raster traversal at (0,0).
+            scan_index_q <= '0;
+        else if (!raster_ready) begin
+            // P38 consumes exactly one scan coordinate per active clock
+            // because pixel_ready is tied high at its instantiation.
+            if (raster_x == FRAME_WIDTH - 1 && raster_y == FRAME_HEIGHT - 1)
+                scan_index_q <= '0;
+            else
+                scan_index_q <= scan_index_q + 1'b1;
+        end
+    end
 
     a0_triangle_coverage_p38 #(.FRAME_WIDTH(FRAME_WIDTH),.FRAME_HEIGHT(FRAME_HEIGHT)) raster(
       .clk(clk),.rst_n(rst_n),.tri_valid(tri_valid && tri_ready),.tri_ready(raster_ready),
