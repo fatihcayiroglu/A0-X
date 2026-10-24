@@ -62,6 +62,11 @@ module a0_p145_dual_raster_depth_blend_trial #(
     logic signed [35:0] lane1_row0,lane1_row1,lane1_row2;
     logic signed [35:0] next_e0,next_e1,next_e2;
     logic signed [35:0] next_row0,next_row1,next_row2;
+    // Registered one-pair lookahead is computed in P144's BRAM read/write
+    // stage, *before* its completion. This avoids a two-step add chain
+    // feeding P144's incoming depth/alpha request in the same clock.
+    logic signed [35:0] ahead_e0_q,ahead_e1_q,ahead_e2_q;
+    logic signed [35:0] ahead_row0_q,ahead_row1_q,ahead_row2_q;
 
     wire [31:0] address0=32'(scan_index);
     wire [31:0] address1=address0+32'd1;
@@ -172,12 +177,12 @@ module a0_p145_dual_raster_depth_blend_trial #(
     wire [15:0] issue_y0=16'(issue_address0/FRAME_WIDTH);
     wire [15:0] issue_x1=16'(issue_address1%FRAME_WIDTH);
     wire [15:0] issue_y1=16'(issue_address1/FRAME_WIDTH);
-    wire signed [35:0] issue_e0=lookahead_issue?next_e0:edge0_q;
-    wire signed [35:0] issue_e1=lookahead_issue?next_e1:edge1_q;
-    wire signed [35:0] issue_e2=lookahead_issue?next_e2:edge2_q;
-    wire signed [35:0] issue_row0=lookahead_issue?next_row0:row0_q;
-    wire signed [35:0] issue_row1=lookahead_issue?next_row1:row1_q;
-    wire signed [35:0] issue_row2=lookahead_issue?next_row2:row2_q;
+    wire signed [35:0] issue_e0=lookahead_issue?ahead_e0_q:edge0_q;
+    wire signed [35:0] issue_e1=lookahead_issue?ahead_e1_q:edge1_q;
+    wire signed [35:0] issue_e2=lookahead_issue?ahead_e2_q:edge2_q;
+    wire signed [35:0] issue_row0=lookahead_issue?ahead_row0_q:row0_q;
+    wire signed [35:0] issue_row1=lookahead_issue?ahead_row1_q:row1_q;
+    wire signed [35:0] issue_row2=lookahead_issue?ahead_row2_q:row2_q;
     wire signed [35:0] issue_lane1_e0=
          (issue_x0==FRAME_WIDTH-1)?(issue_row0+step_y0):(issue_e0+step_x0);
     wire signed [35:0] issue_lane1_e1=
@@ -252,6 +257,8 @@ module a0_p145_dual_raster_depth_blend_trial #(
             ax<=0;ay<=0;bx<=0;by<=0;cx<=0;cy<=0;
             negative_winding<=1'b0;
             edge0_q<=0;edge1_q<=0;edge2_q<=0;
+            ahead_e0_q<=0;ahead_e1_q<=0;ahead_e2_q<=0;
+            ahead_row0_q<=0;ahead_row1_q<=0;ahead_row2_q<=0;
             row0_q<=0;row1_q<=0;row2_q<=0;
             step_x0<=0;step_x1<=0;step_x2<=0;
             step_y0<=0;step_y1<=0;step_y2<=0;
@@ -293,6 +300,16 @@ module a0_p145_dual_raster_depth_blend_trial #(
                         state<=DRAW;
                 end
             end else if(state==CLEAR || state==DRAW) begin
+                // During the previous packet's *read/write* beat,
+                // calculate next pair edges in a register. P144 response
+                // becomes visible one edge later; the lookahead request
+                // then reads these already stable registers.
+                if(draw_mode && pair_inflight_q && !rmw_rsp_valid) begin
+                    ahead_e0_q<=next_e0; ahead_e1_q<=next_e1; ahead_e2_q<=next_e2;
+                    ahead_row0_q<=next_row0;
+                    ahead_row1_q<=next_row1;
+                    ahead_row2_q<=next_row2;
+                end
                 if(!pair_inflight_q && rmw_op_ready)
                     pair_inflight_q<=1'b1;
                 if(pair_inflight_q && rmw_rsp_valid) begin
