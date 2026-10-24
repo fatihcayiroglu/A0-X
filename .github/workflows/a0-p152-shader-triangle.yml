@@ -1,0 +1,183 @@
+name: A0-X P152 real shader-program RGB triangle integration and FPGA route
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p152_shaded_triangle_trial.sv'
+      - 'A0-GPU/rtl/graphics/a0_p152_packed_shaded_command_top.sv'
+      - 'A0-GPU/tests/rtl/a0_p152_shader_triangle_p102_diff_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p152_shaded_bus_p102_diff_tb.sv'
+      - 'A0-GPU/docs/P152-SHADER-TRIANGLE-INTEGRATION.md'
+      - '.github/workflows/a0-p152-shader-triangle.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p152_shaded_triangle_trial.sv'
+      - 'A0-GPU/rtl/graphics/a0_p152_packed_shaded_command_top.sv'
+      - '.github/workflows/a0-p152-shader-triangle.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p152-real-program-shaded-P102-oracle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install genuine Icarus RTL simulator
+        run: |
+          set -euo pipefail
+          if ! timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog; then
+            timeout 240s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog
+          fi
+          iverilog -V | head -2
+      - name: Actual P150 P151 P152 shaded raster full-frame P102 reference matrix
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P152/rtl
+          sources=(
+            A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv
+            A0-GPU/rtl/shader/a0_p151_unorm_microprogram.sv
+            A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv
+            A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv
+            A0-GPU/rtl/graphics/a0_p68_depth_compare.sv
+            A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv
+            A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv
+            A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv
+            A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv
+            A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv
+            A0-GPU/rtl/graphics/a0_p145_dual_raster_depth_blend_trial.sv
+            A0-GPU/rtl/graphics/a0_p152_shaded_triangle_trial.sv
+            A0-GPU/rtl/graphics/a0_p152_packed_shaded_command_top.sv
+          )
+          for shape in '4 4' '7 5' '8 8'; do
+            read -r w h <<< "$shape"
+            id="${w}x${h}"
+            iverilog -g2012 -s a0_p152_shader_triangle_p102_diff_tb \
+              -Pa0_p152_shader_triangle_p102_diff_tb.FRAME_WIDTH="$w" \
+              -Pa0_p152_shader_triangle_p102_diff_tb.FRAME_HEIGHT="$h" \
+              -o "EVIDENCE/P152/rtl/direct-$id.vvp" "${sources[@]}" \
+              A0-GPU/tests/rtl/a0_p152_shader_triangle_p102_diff_tb.sv \
+              2>&1 | tee "EVIDENCE/P152/rtl/direct-$id-compile.log"
+            timeout 120s vvp "EVIDENCE/P152/rtl/direct-$id.vvp" | tee "EVIDENCE/P152/rtl/direct-$id.log"
+            grep -q '^P152_SHADER_TO_BRAM_P102_FRAME_PASS ' "EVIDENCE/P152/rtl/direct-$id.log"
+            iverilog -g2012 -s a0_p152_shaded_bus_p102_diff_tb \
+              -Pa0_p152_shaded_bus_p102_diff_tb.FRAME_WIDTH="$w" \
+              -Pa0_p152_shaded_bus_p102_diff_tb.FRAME_HEIGHT="$h" \
+              -o "EVIDENCE/P152/rtl/packed-$id.vvp" "${sources[@]}" \
+              A0-GPU/tests/rtl/a0_p152_shaded_bus_p102_diff_tb.sv \
+              2>&1 | tee "EVIDENCE/P152/rtl/packed-$id-compile.log"
+            timeout 120s vvp "EVIDENCE/P152/rtl/packed-$id.vvp" | tee "EVIDENCE/P152/rtl/packed-$id.log"
+            grep -q '^P152_SHADED_PACKED_BUS_P102_PASS ' "EVIDENCE/P152/rtl/packed-$id.log"
+          done
+      - name: Strict scalar shaded raster and programmed host bus pixel gates
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,re
+          p=Path('EVIDENCE/P152/rtl')
+          direct=r'^P152_SHADER_TO_BRAM_P102_FRAME_PASS size=(\d+)x(\d+) clears=(\d+) draws=(\d+) checked=(\d+) ref_writes=(\d+) bram_writes=(\d+) dual_write_cycles=(\d+) host_stall=(\d+) shader_exec=(\d+) retired=(\d+)$'
+          packed=r'^P152_SHADED_PACKED_BUS_P102_PASS size=(\d+)x(\d+) clears=(\d+) draws=(\d+) large_vertices=(\d+) frame_pixels_checked=(\d+) bus_txns=(\d+) rejected=(\d+) dual_commits=(\d+) shader_programs=(\d+)$'
+          shapes={}
+          for shape,pixels in [('4x4',16),('7x5',35),('8x8',64)]:
+              sd=(p/f'direct-{shape}.log').read_text()
+              sb=(p/f'packed-{shape}.log').read_text()
+              d=re.findall(direct,sd,re.M);b=re.findall(packed,sb,re.M)
+              assert len(d)==1 and len(b)==1,(shape,sd[-300:],sb[-300:])
+              w,h,clears,draws,checks,refw,dutw,dualc,stalls,shaderexec,retired=map(int,d[0])
+              a,c,clearsb,drawsb,wide,pixelsb,bustx,reject,dualcb,progs=map(int,b[0])
+              assert w==a and h==c and f'{w}x{h}'==shape
+              assert clears==clearsb==2 and draws==drawsb==5
+              assert checks>=6*pixels and pixelsb>=7*pixels
+              assert refw==dutw and refw>=5
+              assert dualc>=1 and dualcb>=1 and stalls>=1
+              assert shaderexec>=5 and retired>=6
+              assert wide>=4 and bustx>=4*7*pixels
+              assert reject>=15 and progs==5
+              shapes[shape]={'P102_direct_RGB_depth_reads':checks,'P102_bus_RGB_depth_reads':pixelsb,
+                   'shader_program_completions':shaderexec,'shader_instructions':retired,
+                   'exact_completed_draw_writes':refw,'packed_host_packets':bustx}
+          (p/'qualification.json').write_text(json.dumps({
+            'milestone':'P152','status':'PASS','actual_P151_P150_shader_to_P145_BRAM':True,
+            'independent_P102_scalar_shader_oracle':True,'all_full_frame_shapes':shapes,
+            'per_pixel_shader_invocation':False,'PCIe_or_physical_board':False
+          },indent=2))
+          print('P152_TRUE_SHADER_RGB_TO_DUAL_BRAM_P102_PASS all three frame shapes')
+          PY
+      - name: Upload exact independent actual RTL evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p152-genuine-shader-to-raster-P102-RTL
+          path: EVIDENCE/P152/rtl/
+          if-no-files-found: warn
+  p152-real-full-shader-raster-ECP5-route:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real ECP5 synthesis and routing
+        run: |
+          set -euo pipefail
+          if ! timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5; then
+            timeout 300s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5
+          fi
+          yosys -V
+          nextpnr-ecp5 --version
+      - name: Synthesize packed bus plus genuine SIMD ALU, microprogram and framebuffer BRAM
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P152/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv A0-GPU/rtl/shader/a0_p151_unorm_microprogram.sv A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv A0-GPU/rtl/graphics/a0_p145_dual_raster_depth_blend_trial.sv A0-GPU/rtl/graphics/a0_p152_shaded_triangle_trial.sv A0-GPU/rtl/graphics/a0_p152_packed_shaded_command_top.sv; hierarchy -check -top a0_p152_packed_shaded_command_top -chparam FRAME_WIDTH 4 -chparam FRAME_HEIGHT 4; synth_ecp5 -top a0_p152_packed_shaded_command_top -json EVIDENCE/P152/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P152/route/yosys.log
+      - name: Full FPGA route, ECP5-85K CABGA756 speed6 seed1 fixed 5MHz research clock
+        run: |
+          set -euo pipefail
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P152/route/netlist.json \
+            --textcfg EVIDENCE/P152/route/route.config \
+            --report EVIDENCE/P152/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P152/route/nextpnr.log
+      - name: Require both physical BRAM and DSP and exact narrow host port budget
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import collections,json
+          p=Path('EVIDENCE/P152/route')
+          m=json.loads((p/'netlist.json').read_text())['modules']['a0_p152_packed_shaded_command_top']
+          pins=sum(len(v['bits']) for v in m['ports'].values())
+          assert pins==76,('P152 physical research bus pin count changed',pins)
+          c=collections.Counter(v['type'] for v in m['cells'].values())
+          assert c.get('DP16KD',0)>=2,('Raster BRAM missing',c)
+          assert c.get('MULT18X18D',0)>=4,('Programmable shader DSPs missing',c)
+          assert c.get('TRELLIS_FF',0)>=200,('Shader registers/BRAM transaction state missing',c)
+          assert not any(k.startswith('$') or k.startswith('a0_') or 'LATCH' in k.upper() for k in c),c
+          route=json.loads((p/'route.json').read_text())
+          for name in ('TRELLIS_IO','TRELLIS_COMB','TRELLIS_FF'):
+              u=route['utilization'][name]
+              assert 0<u['used']<=u['available'],(name,u)
+          assert route['utilization']['TRELLIS_IO']['used']<=96
+          fmax=route['fmax']
+          assert fmax and any('clk' in k for k in fmax)
+          for k,v in fmax.items():
+              assert v['constraint']>=5 and v['achieved']>=v['constraint'],(k,v)
+          (p/'qualification.json').write_text(json.dumps({
+            'milestone':'P152','status':'PASS','real_full_shaded_raster_ECP5_route':True,
+            'packed_command_bus_IO':pins,'mapped_BRAM':c['DP16KD'],
+            'mapped_DSP':c['MULT18X18D'],'mapped_FF':c['TRELLIS_FF'],
+            'routed_tool_Fmax_MHz':fmax,'physical_pin_constraints':False,
+            'real_shader_compiler_or_per_fragment_shader':False
+          },indent=2))
+          print('P152_REAL_PROGRAMMABLE_SHADER_DUAL_BRAM_ECP5_PASS')
+          print('P152_MAPPED_DP16KD',c['DP16KD'])
+          print('P152_MAPPED_SHADER_DSP',c['MULT18X18D'])
+          for k,v in fmax.items():print('P152_TOOL_ESTIMATED_FMAX_MHZ',v['achieved'])
+          PY
+      - name: Save real FPGA synthesis and timing evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p152-real-shader-plus-graphics-route
+          path: EVIDENCE/P152/route/
+          if-no-files-found: warn
