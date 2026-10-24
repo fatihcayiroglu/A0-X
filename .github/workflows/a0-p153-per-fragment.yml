@@ -1,0 +1,93 @@
+name: A0-X P153 real per-fragment P151 shader and P102 coverage oracle
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p153_fragment_shader_trial.sv'
+      - 'A0-GPU/tests/rtl/a0_p153_fragment_shader_p102_tb.sv'
+      - 'A0-GPU/docs/P153-PER-FRAGMENT-SHADER.md'
+      - '.github/workflows/a0-p153-per-fragment.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p153_fragment_shader_trial.sv'
+      - 'A0-GPU/tests/rtl/a0_p153_fragment_shader_p102_tb.sv'
+      - '.github/workflows/a0-p153-per-fragment.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p153-real-covered-pixel-shader-P102:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install genuine Icarus Verilog
+        run: |
+          set -euo pipefail
+          if ! timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog; then
+            timeout 240s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog
+          fi
+          iverilog -V | head -2
+      - name: Verify P38 per-covered-pixel P151 ALU to real BRAM vs P102 + independent scalar RGB
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P153/rtl
+          for shape in '4 4' '7 5' '8 8'; do
+            read -r w h <<< "$shape"
+            id="${w}x${h}"
+            iverilog -g2012 -s a0_p153_fragment_shader_p102_tb \
+              -Pa0_p153_fragment_shader_p102_tb.FRAME_WIDTH="$w" \
+              -Pa0_p153_fragment_shader_p102_tb.FRAME_HEIGHT="$h" \
+              -o "EVIDENCE/P153/rtl/$id.vvp" \
+              A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv \
+              A0-GPU/rtl/shader/a0_p151_unorm_microprogram.sv \
+              A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv \
+              A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv \
+              A0-GPU/rtl/graphics/a0_p68_depth_compare.sv \
+              A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv \
+              A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv \
+              A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv \
+              A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv \
+              A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv \
+              A0-GPU/rtl/graphics/a0_p153_fragment_shader_trial.sv \
+              A0-GPU/tests/rtl/a0_p153_fragment_shader_p102_tb.sv \
+              2>&1 | tee "EVIDENCE/P153/rtl/$id-compile.log"
+            timeout 120s vvp "EVIDENCE/P153/rtl/$id.vvp" | tee "EVIDENCE/P153/rtl/$id.log"
+            grep -q '^P153_REAL_PER_FRAGMENT_SHADER_P102_PASS ' "EVIDENCE/P153/rtl/$id.log"
+          done
+      - name: Require complete framebuffer, three distinct fragment programs and real stalls
+        run: |
+          python3 - <<'PY'
+          import json,re
+          from pathlib import Path
+          p=Path('EVIDENCE/P153/rtl')
+          pat=r'^P153_REAL_PER_FRAGMENT_SHADER_P102_PASS size=(\d+)x(\d+) clears=(\d+) draws=(\d+) checked=(\d+) shader_invocations=(\d+) done=(\d+) host_stalls=(\d+)$'
+          results={}
+          for shape,pixels in [('4x4',16),('7x5',35),('8x8',64)]:
+              log=(p/f'{shape}.log').read_text()
+              rows=re.findall(pat,log,re.M)
+              assert len(rows)==1,(shape,log[-300:])
+              w,h,c,d,checks,inv,done,stall=map(int,rows[0])
+              assert f'{w}x{h}'==shape and c==3 and d==3
+              assert checks>=6*pixels and inv>=5 and done>=inv and stall>=1
+              results[shape]={'RGB_depth_pixel_comparisons':checks,
+                'independent_P102_covered_pixels_and_shader_invocations':inv,
+                'actual_P151_shader_completions':done,
+                'host_stall_cycles':stall}
+          (p/'qualification.json').write_text(json.dumps({
+            'milestone':'P153','status':'PASS','actual_P151_once_per_covered_pixel':True,
+            'P102_coverage_independent_scalar_color':True,
+            'three_framebuffer_shapes':results,
+            'routed_ECP5_qualification':False,
+            'real_GPGPU_compiler_or_FPS':False
+          },indent=2))
+          print('P153_PER_FRAGMENT_SHADER_CORRECTNESS_PASS real RTL no skips')
+          PY
+      - name: Save complete HDL tests and comparison evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p153-real-fragment-shader-rtl-evidence
+          path: EVIDENCE/P153/rtl/
+          if-no-files-found: warn
