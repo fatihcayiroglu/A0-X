@@ -185,10 +185,11 @@ module a0_p150_unorm_simd4_alu_tb;
     stall_mode=0;
     @(negedge clk);rsp_ready=1;
 
-    // Deliberate held response, incoming valid packet cannot overwrite.
+    // Deliberate held response: disable consumer BEFORE issuing, so
+    // a one-cycle result cannot already have been acknowledged.
+    rsp_ready=0;
     send(7777);
     @(negedge clk);
-    rsp_ready=0;
     req_valid=1;drive(7778);
     #1;
     if(!rsp_valid || req_ready)$fatal(1,"P150 held reply did not backpressure");
@@ -202,9 +203,10 @@ module a0_p150_unorm_simd4_alu_tb;
     req_valid=0;rsp_ready=1;
     drain();
 
-    // In-flight response must be flushed by reset. Do not replay.
+    // Hold output BEFORE launch to avoid a consumed response race.
+    rsp_ready=0;
     send(8888);
-    @(negedge clk);rsp_ready=0;
+    @(negedge clk);
     if(!rsp_valid)$fatal(1,"P150 missing response before reset");
     rst_n=0;
     repeat(3)@(negedge clk);
