@@ -1,0 +1,105 @@
+name: A0-X P154 scissor rejects unshaded pixels in real P153 fragment pipeline
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p153_fragment_shader_trial.sv'
+      - 'A0-GPU/rtl/graphics/a0_p153_packed_fragment_command_top.sv'
+      - 'A0-GPU/tests/rtl/a0_p154_fragment_scissor_p102_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p154_packed_scissor_p102_tb.sv'
+      - 'A0-GPU/docs/P154-FRAGMENT-SCISSOR.md'
+      - '.github/workflows/a0-p154-scissor.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p153_fragment_shader_trial.sv'
+      - 'A0-GPU/rtl/graphics/a0_p153_packed_fragment_command_top.sv'
+      - 'A0-GPU/tests/rtl/a0_p154_fragment_scissor_p102_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p154_packed_scissor_p102_tb.sv'
+      - '.github/workflows/a0-p154-scissor.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p154-real-P102-scissor-and-skip:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Icarus
+        run: |
+          set -euo pipefail
+          if ! timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog; then
+            timeout 240s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog
+          fi
+      - name: Real P151 shader and P144 memory, clipped against P102
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P154/rtl
+          sources=(
+            A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv
+            A0-GPU/rtl/shader/a0_p151_unorm_microprogram.sv
+            A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv
+            A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv
+            A0-GPU/rtl/graphics/a0_p68_depth_compare.sv
+            A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv
+            A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv
+            A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv
+            A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv
+            A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv
+            A0-GPU/rtl/graphics/a0_p153_fragment_shader_trial.sv
+            A0-GPU/rtl/graphics/a0_p153_packed_fragment_command_top.sv
+          )
+          for shape in '4 4' '7 5' '8 8'; do
+            read -r w h <<< "$shape"
+            id="${w}x${h}"
+            for test in a0_p154_fragment_scissor_p102_tb a0_p154_packed_scissor_p102_tb; do
+              iverilog -g2012 -s "$test" \
+                -P"$test.FRAME_WIDTH=$w" -P"$test.FRAME_HEIGHT=$h" \
+                -o "EVIDENCE/P154/rtl/$test-$id.vvp" "${sources[@]}" \
+                "A0-GPU/tests/rtl/$test.sv" \
+                2>&1 | tee "EVIDENCE/P154/rtl/$test-$id-compile.log"
+              timeout 120s vvp "EVIDENCE/P154/rtl/$test-$id.vvp" | tee "EVIDENCE/P154/rtl/$test-$id.log"
+            done
+            grep -q '^P154_SCISSOR_SHADER_P102_PASS ' "EVIDENCE/P154/rtl/a0_p154_fragment_scissor_p102_tb-$id.log"
+            grep -q '^P154_PACKED_SCISSOR_P102_PASS ' "EVIDENCE/P154/rtl/a0_p154_packed_scissor_p102_tb-$id.log"
+          done
+      - name: Ratchet exact P102 oracle and skip empty clipping
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re,json
+          p=Path('EVIDENCE/P154/rtl')
+          direct=r'^P154_SCISSOR_SHADER_P102_PASS size=(\d+)x(\d+) clears=(\d+) draws=(\d+) checked=(\d+) shader_invocations=(\d+) done=(\d+) partial=(\d+) zero=(\d+) host_stalls=(\d+)$'
+          packed=r'^P154_PACKED_SCISSOR_P102_PASS size=(\d+)x(\d+) pixels=(\d+) covered=(\d+) bus_txns=(\d+) rejected=(\d+) shader_invocations=(\d+)$'
+          ev={}
+          for key,pixels in [('4x4',16),('7x5',35),('8x8',64)]:
+              a=(p/f'a0_p154_fragment_scissor_p102_tb-{key}.log').read_text()
+              b=(p/f'a0_p154_packed_scissor_p102_tb-{key}.log').read_text()
+              m=re.findall(direct,a,re.M);q=re.findall(packed,b,re.M)
+              assert len(m)==1 and len(q)==1,(key,a[-300:],b[-300:])
+              x,y,clears,draws,checked,shader,done,partial,zero,stalls=map(int,m[0])
+              px,py,readbacks,covered,bus,errors,inv=map(int,q[0])
+              assert f'{x}x{y}'==key==f'{px}x{py}'
+              assert (clears,draws,partial,zero)==(3,3,1,1)
+              assert checked>=6*pixels and shader==pixels+4
+              assert done>=shader and stalls>=1
+              assert readbacks==pixels and covered==inv==4
+              assert bus>=4*pixels and errors>=6
+              ev[key]={'P102_color_depth_readbacks':checked,'fragment_invocations':shader,
+                 'scissor_clipped_shader_invocations':4,'zero_area_invocations':0,
+                 'packed_host_checked_pixels':readbacks,'packed_bus_packets':bus}
+          (p/'qualification.json').write_text(json.dumps({
+            'milestone':'P154','status':'PASS','real_P151_shader_and_FPGA_BRAM':True,
+            'P102_independent_coverage_and_scissor':True,'scenes':ev,
+            'real_board_or_PCIe':False
+          },indent=2))
+          print('P154_REAL_SCISSOR_SHADER_SKIP_AND_P102_FRAME_PASS')
+          PY
+      - name: Preserve exact Icarus evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p154-scissor-fragment-rtl-evidence
+          path: EVIDENCE/P154/rtl/
+          if-no-files-found: warn
