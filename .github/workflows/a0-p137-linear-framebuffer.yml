@@ -1,0 +1,146 @@
+name: A0-X P137 linear framebuffer differential RTL and ECP5
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv'
+      - 'A0-GPU/tests/rtl/a0_p137_p102_reference.sv'
+      - 'A0-GPU/tests/rtl/a0_p137_linear_framebuffer_diff_tb.sv'
+      - 'A0-GPU/docs/P137-LINEAR-FRAMEBUFFER-ADDRESSING.md'
+      - '.github/workflows/a0-p137-linear-framebuffer.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv'
+      - 'A0-GPU/tests/rtl/a0_p137_linear_framebuffer_diff_tb.sv'
+      - '.github/workflows/a0-p137-linear-framebuffer.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p137-cycle-exact-reference:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual Icarus Verilog
+        run: |
+          set -euo pipefail
+          if ! timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog; then
+            timeout 240s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog
+          fi
+          iverilog -V | head -2
+      - name: Differential full original P102 versus P137 across three framebuffer shapes
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P137/rtl
+          for shape in '4 4' '7 5' '8 8'; do
+            read -r w h <<< "$shape"
+            id="${w}x${h}"
+            iverilog -g2012 -s a0_p137_linear_framebuffer_diff_tb \
+              -Pa0_p137_linear_framebuffer_diff_tb.FRAME_WIDTH="$w" \
+              -Pa0_p137_linear_framebuffer_diff_tb.FRAME_HEIGHT="$h" \
+              -o "EVIDENCE/P137/rtl/$id.vvp" \
+              A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv \
+              A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv \
+              A0-GPU/rtl/graphics/a0_p68_depth_compare.sv \
+              A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv \
+              A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv \
+              A0-GPU/tests/rtl/a0_p137_p102_reference.sv \
+              A0-GPU/tests/rtl/a0_p137_linear_framebuffer_diff_tb.sv \
+              2>&1 | tee "EVIDENCE/P137/rtl/$id-compile.log"
+            timeout 120s vvp "EVIDENCE/P137/rtl/$id.vvp" | tee "EVIDENCE/P137/rtl/$id.log"
+            grep -q '^P137_LINEAR_FRAMEBUFFER_DIFFERENTIAL_PASS ' "EVIDENCE/P137/rtl/$id.log"
+          done
+      - name: Enforce non-vacuous test coverage and exact three result lines
+        run: |
+          python3 - <<'PY'
+          import json,re
+          from pathlib import Path
+          p=Path('EVIDENCE/P137/rtl')
+          shapes={}
+          for shape in ('4x4','7x5','8x8'):
+              log=(p/(shape+'.log')).read_text()
+              pattern=r'^P137_LINEAR_FRAMEBUFFER_DIFFERENTIAL_PASS width=(\d+) height=(\d+) cycles=(\d+) clears=(\d+) draws=(\d+) pixel_writes=(\d+)$'
+              found=re.findall(pattern,log,re.M)
+              assert len(found)==1,(shape,found,log[-300:])
+              w,h,cycles,clears,draws,pixels=map(int,found[0])
+              assert f'{w}x{h}'==shape and cycles>=100 and clears==2 and draws==5 and pixels>=5
+              shapes[shape]={'cycles':cycles,'clears':clears,'draws':draws,'pixel_writes':pixels}
+          (p/'qualification.json').write_text(json.dumps({
+              'status':'PASS','milestone':'P137','exact_P102_reference_comparison':True,
+              'simulated_frame_shapes':shapes,'physical_board_tested':False
+          },indent=2))
+          print('P137_P102_FRAME_DIFFERENTIAL_PASS all three shapes and full raster tests')
+          PY
+      - name: Upload all simulation logs, even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-p137-p102-differential
+          path: EVIDENCE/P137/rtl/
+          if-no-files-found: warn
+  p137-ecp5-route:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real ECP5 Yosys and nextpnr
+        run: |
+          set -euo pipefail
+          if ! timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5; then
+            timeout 300s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5
+          fi
+          yosys -V
+          nextpnr-ecp5 --version
+      - name: Map actual P137+P136+P135+P133 graphics pipeline into ECP5
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P137/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv A0-GPU/rtl/graphics/a0_p132_command_bus.sv A0-GPU/rtl/graphics/a0_p133_async_fifo.sv A0-GPU/rtl/graphics/a0_p133_dual_clock_bridge.sv; hierarchy -check -top a0_p133_dual_clock_bridge -chparam FRAME_WIDTH 4 -chparam FRAME_HEIGHT 4; synth_ecp5 -top a0_p133_dual_clock_bridge -json EVIDENCE/P137/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P137/route/yosys.log
+      - name: Physically map/place/route FPGA model at P136 baseline seed and clock
+        run: |
+          set -euo pipefail
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P137/route/netlist.json \
+            --textcfg EVIDENCE/P137/route/route.config \
+            --report EVIDENCE/P137/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P137/route/nextpnr.log
+      - name: Verify resource bounds, two clocks and measured Fmax not below P136
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          p=Path('EVIDENCE/P137/route')
+          net=json.loads((p/'netlist.json').read_text())['modules']['a0_p133_dual_clock_bridge']
+          assert net['ports']['host_clk']['bits']!=net['ports']['gpu_clk']['bits']
+          io=sum(len(v['bits']) for v in net['ports'].values())
+          assert 0<io<=96,io
+          kinds=[c['type'] for c in net['cells'].values()]
+          assert kinds and not any(t.startswith('$') or t.startswith('a0_') or 'LATCH' in t.upper() for t in kinds)
+          route=json.loads((p/'route.json').read_text())
+          assert len(route['fmax'])>=2
+          for clk,config in route['fmax'].items():
+              assert config['constraint']>=5 and config['achieved']>=5,(clk,config)
+          f=[config['achieved'] for clk,config in route['fmax'].items() if 'gpu_clk' in clk]
+          assert len(f)==1,f
+          # P136 49.91016 MHz mapped GPU Fmax on same fixed route config.
+          assert f[0]>=49.90,f'P137 mapped GPU Fmax regressed below 49.90MHz: {f[0]:.4f}MHz'
+          e={'status':'PASS','milestone':'P137','real_ecp5_pnr':True,
+             'top_io_bits':io,'cells':len(kinds),
+             'p136_gpu_baseline_mhz':49.91,'p137_gpu_mhz':f[0],
+             'clocks':route['fmax'],'physical_board_qualified':False,
+             'real_vram_or_multiport_ram':False,'cdc_physical_signoff':False}
+          (p/'qualification.json').write_text(json.dumps(e,indent=2))
+          print('P137_MAPPED_FRAMEBUFFER_ADDRESS_PASS no GPU Fmax regression; NOT board qualified')
+          print('P137_GPU_FMAX_MHZ',f[0])
+          PY
+      - name: Upload ECP5 data even when gates fail
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-p137-ecp5-mapping
+          path: EVIDENCE/P137/route/
+          if-no-files-found: warn
