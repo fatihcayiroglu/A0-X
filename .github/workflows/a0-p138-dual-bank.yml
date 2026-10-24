@@ -33,7 +33,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p EVIDENCE/P138/rtl
-          for shape in '4 4' '7 5' '8 8'; do
+          for shape in '4 4' '7 5' '8 8' '32 32'; do
             read -r w h <<< "$shape"
             id="${w}x${h}"
             iverilog -g2012 -s a0_p138_dual_bank_framebuffer_tb \
@@ -54,7 +54,7 @@ jobs:
           p=Path('EVIDENCE/P138/rtl')
           shapes={}
           pattern=r'^P138_DUAL_BANK_GOLDEN_PASS pixels=(\d+) checks=(\d+) accepted=(\d+) dual=(\d+) conflicts=(\d+) reads=(\d+) writes=(\d+) invalid=(\d+)$'
-          for shape,pixels in [('4x4',16),('7x5',35),('8x8',64)]:
+          for shape,pixels in [('4x4',16),('7x5',35),('8x8',64),('32x32',1024)]:
               log=(p/f'{shape}.log').read_text()
               records=re.findall(pattern,log,re.M)
               assert len(records)==1,(shape,log[-400:])
@@ -73,7 +73,7 @@ jobs:
               'real_GPU_pixel_throughput_measured':False,
               'shapes':shapes
           },indent=2))
-          print('P138_DUAL_BANK_RTL_MATRIX_PASS three shapes and nonvacuous 2/cycle banks')
+          print('P138_DUAL_BANK_RTL_MATRIX_PASS four shapes and nonvacuous 2/cycle banks')
           PY
       - name: Upload simulation and golden response evidence
         if: always()
