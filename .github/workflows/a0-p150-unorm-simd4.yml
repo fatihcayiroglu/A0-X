@@ -109,7 +109,10 @@ jobs:
           pins=sum(len(v['bits']) for v in m['ports'].values())
           assert pins==133,('P150 RTL pin budget changed',pins)
           c=collections.Counter(x['type'] for x in m['cells'].values())
-          assert c.get('TRELLIS_COMB',0)>=20,('Shader arithmetic optimized away?',c)
+          # Yosys's ECP5 JSON names LUT4 and CCU2C primitives;
+          # nextpnr's utilization report instead calls these TRELLIS_COMB.
+          assert c.get('LUT4',0)>=20,('Shader arithmetic optimized away?',c)
+          assert c.get('MULT18X18D',0)>=4,('Real UNORM multipliers absent',c)
           assert c.get('TRELLIS_FF',0)>=40,('Registered response missing?',c)
           assert not any(x.startswith('$') or x.startswith('a0_') or 'LATCH' in x.upper() for x in c),c
           route=json.loads((p/'route.json').read_text())
@@ -122,14 +125,16 @@ jobs:
               assert v['constraint']>=5 and v['achieved']>=v['constraint'],(key,v)
           (p/'qualification.json').write_text(json.dumps({
              'milestone':'P150','status':'PASS','real_ecp5_route':True,
-             'rtl_port_bits':pins,'mapped_LUT_cells':c.get('TRELLIS_COMB',0),
+             'rtl_port_bits':pins,'mapped_LUT4_cells':c.get('LUT4',0),
+             'mapped_DSP_multipliers':c.get('MULT18X18D',0),
              'mapped_FF_cells':c.get('TRELLIS_FF',0),
              'four_RGBA_components':True,'fmax_tool_estimate':clocks,
              'PCIe':False,'programmable_shader_ISA':False,
              'physical_board_tested':False
           },indent=2))
           print('P150_REAL_ECP5_SHADER_ALU_ROUTE_PASS exact vector datapath')
-          print('P150_FPGA_COMB_CELLS',c['TRELLIS_COMB'])
+          print('P150_FPGA_LUT4_CELLS',c['LUT4'])
+          print('P150_FPGA_DSP_MULTIPLIERS',c['MULT18X18D'])
           for name,v in clocks.items():print('P150_ALU_RESEARCH_FMAX_MHZ',v['achieved'])
           PY
       - name: Upload real ECP5 reports and failures
