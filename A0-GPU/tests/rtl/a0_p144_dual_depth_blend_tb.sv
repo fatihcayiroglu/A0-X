@@ -244,6 +244,7 @@ module a0_p144_dual_depth_blend_tb #(
     depth_compare_op=2'd3;depth_write=1;blend_enable=1;
     source_rgb=24'hdeaf01;source_depth=24'h000022;source_alpha=8'd127;
     host_read_valid=1;host_read_x=0;host_read_y=0;
+    #1; // Allow combinational priority gating to settle after driving op_valid.
     if(host_read_ready!==0) $fatal(1,"P144 host wrongly won same-cycle op priority");
     host_priority_stalls=host_priority_stalls+1;
     @(posedge clk);#2;
