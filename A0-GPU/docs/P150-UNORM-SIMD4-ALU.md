@@ -31,6 +31,22 @@ The one-entry registered response slot supports **one entire RGBA vector packet 
 4. Full genuine Yosys ECP5 technology mapping and nextpnr ECP5-85K CABGA756 speed6 seed1 `--freq 5 --lpf-allow-unconstrained`. Require no unmapped RTL cells or latches, bounded LUT/I/O resources, routed Fmax >=5MHz and generated netlist/placement timing logs. Do **not** demand a BRAM primitive: this pure ALU intentionally contains no framebuffer.
 5. Keep inherited P126/P127/P132/P134 P149 main regressions green where applicable, and require the P150 workflow to pass on the **exact latest PR head** before merging as an experimental shader arithmetic block.
 
+## Verified independent SIMD ALU results — 24 October 2026
+
+On code head `c7e6532f`, genuine Icarus Verilog executed the *actual RTL* and compared each 4×8-bit component with an independent integer-math reference:
+
+- **6,912 complete directed boundary operations**: all 8 opcodes, 6×6 source/destination extremes, 6 alpha extremes and 4 tested masks (0/5/A/F).
+- **2,048 deterministic mixed packets**, every output vector and request ID checked, and **128 consecutive one-per-clock accepted inputs** with matching outputs.
+- **1,660 output-stalled cycles** exercised while preserving response data and ID, plus **16 matching fresh post-reset replies** after cancelling an unconsumed result.
+- Real multiplication and alpha interpolation obey `floor((numerator+127)/255)` integer semantics. No skipped or todo assertions were accepted.
+
+Genuine Yosys ECP5 mapping and nextpnr ECP5-85K CABGA756 speed6 seed1, 5MHz internal tool target and **unconstrained physical pins** routed successfully:
+- **133 RTL top I/O bits**; **626 `LUT4`** and **8 `MULT18X18D`** multiplier primitives, **41 registered `TRELLIS_FF`** cells.
+- Real routed tool-estimated single-clock Fmax **169.46 MHz** (not a measured FPGA card clock). This is a *small standalone arithmetic top*, not the P149/P146 graphics engine; do not compare this frequency numerically to those full-system designs as a speedup.
+- The user-selectable operations and stall-safe full-rate input are verified only within this simple SIMD primitive. No executable shader program, register file, scheduling, shader threads, vertex processing, texture filtering or FP32 functionality exists yet.
+
+The final documentation-head workflow must pass separately before merge.
+
 ## Scope
 
 No shader ISA or compiled program is executed yet, no register files, no floating point, FP16/FP32, texture fetch, derivatives, pipeline hazards, wavefront scheduling, VRAM, drivers, PCIe, monitor output or GPU benchmark. A future P151 may define a bounded vector instruction/register protocol and integrate the P150 ALU into a real instruction-execution sequencer.
