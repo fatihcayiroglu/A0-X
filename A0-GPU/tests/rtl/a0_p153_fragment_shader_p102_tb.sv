@@ -75,7 +75,7 @@ module a0_p153_fragment_shader_p102_tb #(
     .clk(clk),.rst_n(rst_n),.clear_valid(clear_valid),
     .clear_ready(rc_ready),.clear_done(rc_done),
     .clear_color(clear_color),.clear_depth(clear_depth),
-    .tri_valid(tri_valid),.tri_ready(rt_ready),.tri_done(rt_done),
+    .tri_valid(tri_valid),.tri_ready(rt_ready),
     .x0(x0),.y0(y0),.x1(x1),.y1(y1),.x2(x2),.y2(y2),
     .tri_color(marker),.tri_depth(tri_depth),
     .depth_compare_op(depth_compare_op),.depth_write(depth_write),
