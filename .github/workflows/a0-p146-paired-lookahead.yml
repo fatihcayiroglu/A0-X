@@ -147,6 +147,11 @@ jobs:
           assert clocks and any('clk' in k for k in clocks)
           for k,v in clocks.items():
               assert v['constraint']>=5 and v['achieved']>=v['constraint'],(k,v)
+              # At an equal FPGA research configuration, a large Fmax drop
+              # can erase the observed command-to-done cycle savings.
+              # 20MHz is above the 4x4 parity point (~19.42MHz) relative
+              # to P145's 27.41MHz/24-cycle baseline.
+              assert v['achieved']>=20.0,('P146 research clock below 20MHz',k,v)
           (p/'qualification.json').write_text(json.dumps({
             'milestone':'P146','status':'PASS','actual_ECP5_mapped':True,
             'DP16KD':kinds['DP16KD'],'top_io_bits':io,'cells':kinds,
