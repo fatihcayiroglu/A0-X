@@ -20,3 +20,19 @@ P154 does NOT alter P38's winding/top-left coverage, does not change P150/P151 A
 - Full genuine Yosys+nextpnr ECP5-85K CABGA756 speed6 seed1 4x4 research model, 5MHz tool target, unconstrained external pin assignments: require **76 external bits**, real DP16KD and MULT18X18D resources, mapped full P153/P154 shader/BRAM top. Any failure leaves the PR draft.
 
 No real board, actual sustained fragment shaders per cycle, physical timing sign-off, GPU driver or game FPS is claimed.
+
+
+## First genuine RTL and FPGA evidence — 24 October 2026
+
+For the P154 implementation, actual Icarus independently checked three complete 4x4/7x5/8x8 scenes against unchanged P102 with the P59 scissor enabled/disabled. Source is **real P153 P38/P151/P150 + P144/P139/P138 BRAM**, not a mocked shader.
+
+| Framebuffer | P102 RGB/depth readbacks | P151 invocations across 3 draws | Active 2x2 scissor | Zero-width scissor | Unclipped draw |
+|---|---:|---:|---:|---:|---:|
+| 4x4 | 96 | 20 | 4 | 0 | 16 |
+| 7x5 | 210 | 39 | 4 | 0 | 35 |
+| 8x8 | 384 | 68 | 4 | 0 | 64 |
+
+Separate real 76-pin-equivalent P153 packet interface test set scissor MODE bit4 and XY/WH registers, then confirmed **only 4 shader invocations** and matching 24-bit RGB and 24-bit stored depth on **every pixel** in all three frame sizes; reserved MODE bit5 remains rejected. Inherited full-scene P153 tests explicitly leave scissor disabled, so P153's original full invocation count is still required, not skipped.
+
+The first P154 top after this change was placed and routed in real Yosys/nextpnr ECP5-85K (CABGA756 speed6 seed1, 4x4 internal framebuffer, 5MHz research target, unconstrained pins): **76 research I/O signals**, **4 real DP16KD BRAMs**, **22 real MULT18X18D DSPs**, and a **33.304 MHz tool-estimated Fmax** versus P153's earlier 34.491MHz. It is a small clock-estimate regression, not hidden as a speedup; avoiding shader work in clipped scenes is not yet an externally timed FPS claim. These results require the final exact-head CI rerun to pass before any merge.
+
