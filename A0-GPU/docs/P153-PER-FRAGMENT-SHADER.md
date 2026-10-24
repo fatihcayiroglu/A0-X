@@ -1,0 +1,15 @@
+# P153 — Genuine per-covered-pixel UNORM shader path
+
+**DRAFT research experiment; not merged until required real RTL evidence.**
+
+P152 successfully connected P151/P150 shader microprogram result to a *triangle-constant source color*. P153 moves to a separate deliberately low-throughput **per-covered-fragment invocation**: P38's stallable exact triangle edge/top-left coverage emits each covered pixel coordinate. P153 snapshots its (x,y), loads per-fragment input vector R0 as `{8'hff,y[7:0],x[7:0],8'h40}` into the actual P151 eight-register sequencer, executes a real configured P150 SIMD UNORM program, reads committed destination register R2 as that single fragment's RGB, and writes the color/depth through the real single lane of P144/P139/P138 BRAM read/modify/write. P38 `pixel_ready` becomes true **only on successful RMW completion**. Non-covered positions advance without shader invocations; the next covered pixel cannot overtake the previous one.
+
+The real P151 program/instruction memory is configured at idle only. Per-fragment R0 update is serialized before issuing each shader microprogram, so no program data race exists. Shared reset aborts any outstanding shader/RMW activity and invalidates framebuffer. Host debug reads are suppressed during scan/shader/depth operations. Clear walks the framebuffer and writes every pixel through actual BRAM; no fake initialized status is returned before completion. Memory or shader error fail closed and are reset-recoverable.
+
+**Scope limitations:** Only one covered pixel can be in flight. R0 coordinate inputs truncate X/Y to 8 bits in this intentionally bounded initial pixel attribute contract even though the triangle geometry remains full signed16; tests use framebuffer sizes 4×4, 7×5, 8×8. There are no interpolated per-vertex attributes, derivatives, textures, arbitrary shader entrypoints, FP32, wavefront scheduler, PCIe, external VRAM or actual physical board. This is a research fragment pipeline, not a competitive GPU shader throughput benchmark.
+
+## Independent acceptance tests
+
+- Run real Icarus on 4×4,7×5,8×8 with P38 coverage, genuine P151/P150 shader, P144/P139/P138 RMW and unchanged original P102. P102 provides independent winding-aware coverage/depth, and an independent scalar model calculates per-pixel UNORM shader RGB from real pixel X/Y for ADD_SAT, LERP and MUL. Assert each RGB/depth framebuffer word and exact per-covered-pixel invocation count.
+- Test both triangle winding orders, multiple clears, 16bit signed full coverage coordinates −257/+1024, actual readback including invalid coordinates, host backpressure during active pixel shader operations and reset mid-draw. Never count uncovered pixel locations as shader invocations.
+- For a routed FPGA research milestone, add a **compact command wrapper** preserving full triangle vertices and actual shader configuration. Route full P153+P151+P150+P144+BRAM ECP5-85K CABGA756 rather than only the standalone shader ALU. Do not claim real FPGA fit until the complete top passes Yosys and nextpnr.
