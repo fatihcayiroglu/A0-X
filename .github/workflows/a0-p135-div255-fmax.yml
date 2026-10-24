@@ -1,0 +1,146 @@
+name: A0-X P135 exact RGB blend and GPU Fmax regression
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv'
+      - 'A0-GPU/rtl/graphics/tb/a0_p135_div255_equivalence_tb.sv'
+      - 'A0-GPU/docs/P135-EXACT-ALPHA-DIV255-OPTIMIZATION.md'
+      - '.github/workflows/a0-p135-div255-fmax.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv'
+      - 'A0-GPU/rtl/graphics/tb/a0_p135_div255_equivalence_tb.sv'
+      - '.github/workflows/a0-p135-div255-fmax.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p135-bitexact-p70:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exhaustively prove the bounded integer identity
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P135/equivalence
+          python3 - <<'PY' | tee EVIDENCE/P135/equivalence/arithmetic-proof.log
+          for value in range(65153):
+              got=(value+1+(value>>8))>>8
+              expected=value//255
+              if got!=expected:
+                  raise AssertionError((value,got,expected))
+          print('P135_EXHAUSTIVE_DIV255_IDENTITY_PASS all 65153 bounded numerators')
+          PY
+          grep -qx 'P135_EXHAUSTIVE_DIV255_IDENTITY_PASS all 65153 bounded numerators' EVIDENCE/P135/equivalence/arithmetic-proof.log
+      - name: Install real HDL simulator
+        run: |
+          set -euo pipefail
+          if ! timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog; then
+            timeout 240s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog
+          fi
+          iverilog -V | head -2
+      - name: Compare 66304 real P70 RGB and bypass cases with legacy RTL oracle
+        run: |
+          set -euo pipefail
+          iverilog -g2012 -s a0_p135_div255_equivalence_tb \
+            -o EVIDENCE/P135/equivalence/p135.vvp \
+            A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv \
+            A0-GPU/rtl/graphics/tb/a0_p135_div255_equivalence_tb.sv \
+            2>&1 | tee EVIDENCE/P135/equivalence/compile.log
+          timeout 90s vvp EVIDENCE/P135/equivalence/p135.vvp | tee EVIDENCE/P135/equivalence/rtl.log
+          grep -qx 'P135_RGB_DIV255_EQUIVALENCE_PASS 65536 patterns + 768 edge/bypass cases' EVIDENCE/P135/equivalence/rtl.log
+      - name: Fail closed on both actual evidence markers
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('EVIDENCE/P135/equivalence')
+          assert 'P135_EXHAUSTIVE_DIV255_IDENTITY_PASS' in (p/'arithmetic-proof.log').read_text()
+          assert 'P135_RGB_DIV255_EQUIVALENCE_PASS' in (p/'rtl.log').read_text()
+          (p/'qualification.json').write_text(json.dumps({
+            'milestone':'P135','status':'PASS','bounded_exhaustive_integer_proof':True,
+            'bounded_numerator_values_tested':65153,'actual_iverilog_rgb_and_bypass_vectors':66304,
+            'real_electron_card_performance_measured':False,'board_tested':False
+          },indent=2))
+          PY
+      - name: Upload proof and RTL evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-p135-exact-div255-evidence
+          path: EVIDENCE/P135/equivalence/
+          if-no-files-found: warn
+
+  p135-real-ecp5-fmax:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual ECP5 mapping tools
+        run: |
+          set -euo pipefail
+          if ! timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5; then
+            timeout 300s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5
+          fi
+          yosys -V
+          nextpnr-ecp5 --version
+      - name: Synthesize full A0-X raster + optimized P70 + command/CDC bridge
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P135/fmax
+          yosys -p "read_verilog -sv A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv A0-GPU/rtl/graphics/a0_p132_command_bus.sv A0-GPU/rtl/graphics/a0_p133_async_fifo.sv A0-GPU/rtl/graphics/a0_p133_dual_clock_bridge.sv; hierarchy -check -top a0_p133_dual_clock_bridge -chparam FRAME_WIDTH 4 -chparam FRAME_HEIGHT 4; synth_ecp5 -top a0_p133_dual_clock_bridge -json EVIDENCE/P135/fmax/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P135/fmax/yosys.log
+      - name: Real ECP5-85K 5MHz placement and routing with identical P134 seed
+        run: |
+          set -euo pipefail
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P135/fmax/netlist.json \
+            --textcfg EVIDENCE/P135/fmax/route.config \
+            --report EVIDENCE/P135/fmax/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P135/fmax/nextpnr.log
+      - name: Require no GPU clock regression against P134 measured 9.77MHz baseline
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('EVIDENCE/P135/fmax')
+          n=json.loads((p/'netlist.json').read_text())
+          top=n['modules']['a0_p133_dual_clock_bridge']
+          assert top['ports']['host_clk']['bits']!=top['ports']['gpu_clk']['bits']
+          io=sum(len(v['bits']) for v in top['ports'].values())
+          assert 0<io<=96, f'IO unbounded: {io}'
+          kinds=[cell['type'] for cell in top['cells'].values()]
+          assert kinds and not any(t.startswith('$') or t.startswith('a0_') or 'LATCH' in t.upper() for t in kinds)
+          route=json.loads((p/'route.json').read_text())
+          for k in ('TRELLIS_COMB','TRELLIS_IO'):
+              u=route['utilization'][k]
+              assert 0<u['used']<=u['available'],k
+          clocks=route['fmax']
+          assert len(clocks)>=2,'lost independently reported clock'
+          for k,v in clocks.items():
+              assert v['constraint']>=5 and v['achieved']>=v['constraint'],(k,v)
+          gpu=[v['achieved'] for k,v in clocks.items() if 'gpu_clk' in k]
+          assert len(gpu)==1,f'unexpected GPU clocks: {clocks}'
+          assert gpu[0]>=9.77, f'P135 GPU Fmax regression: {gpu[0]} MHz below baseline 9.77 MHz'
+          evidence={
+            'milestone':'P135','status':'PASS','mapped_real_ecp5_pnr':True,
+            'previous_gpu_fmax_mhz':9.77,'new_gpu_fmax_mhz':gpu[0],
+            'gpu_fmax_improvement_mhz':round(gpu[0]-9.77,4),
+            'clock_fmax':clocks,'top_io_bits':io,'mapped_cells':len(kinds),
+            'physical_board_measured':False,'external_io_timing_qualified':False,
+            'cdc_physical_signoff':False
+          }
+          (p/'qualification.json').write_text(json.dumps(evidence,indent=2))
+          print('P135_GPU_FMAX_NONREGRESSION_PASS routed FPGA model only')
+          PY
+      - name: Upload full Yosys/nextpnr evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-p135-fmax-evidence
+          path: EVIDENCE/P135/fmax/
+          if-no-files-found: warn
