@@ -25,6 +25,28 @@ The ID is an **opaque, possibly reusable token**. The tuple `(rsp_epoch,rsp_id)`
 4. Genuine Yosys `synth_ecp5` plus nextpnr ECP5-85K CABGA756 speed6 seed1, 4×4 internal framebuffer, `--freq 5 --lpf-allow-unconstrained`. Require **exactly 111 top-level I/O bits**, ≥2 actual DP16KD BRAM cells, no unmapped cells/latches, bounded fabric utilization and a complete clock timing report.
 5. Inherited P126/P127/P132/P134/P148 regressions must pass on the **exact PR head**, not just on an earlier commit. A failed, skipped or pending required job means NO merge.
 
+## Verified RTL and FPGA evidence — 24 October 2026
+
+At code head `f5216d62`, all **five** triggered exact-head GitHub Actions workflows succeeded: P126, P127, P132, P134 and P149. The P149 job used the *actual* P148/P147/P146/P145/P144/P139/P138 pipeline with Icarus Verilog, not a mocked GPU.
+
+**Transaction-ID stress:** 365 ordered mixed writes, reads and invalid requests returned 365 matching IDs with 121 correctly tagged error responses. An unacknowledged response remained stable while four more commands filled the queue and produced 12 demonstrable full-queue stalls. A held soft-reset cancelled one held response plus four pending requests, incremented `epoch` **exactly once** over four reset cycles, and subsequent fresh reads returned the expected register values with the new epoch.
+
+**Watchdog failure-injection stress:** with WATCHDOG_CYCLES=16, the test explicitly forced the wrapper's *observed* backend-response-valid low while the true P147 engine was present. It confirmed latched `link_fault`, zero leaked stale responses, a deliberate link reset increasing epoch to 1, three subsequent real P147 replies (including one expected error), and physical-reset epoch returning to 0. This verifies the bounded fault-control behavior, *not* full hardware fault coverage or crash-safe software replay.
+
+**Genuine end-to-end tagged command / P102 RGB-depth oracle:**
+
+| Framebuffer | Clears | Completed draws | Pixel RGB/depth readback comparisons | Tagged bus transactions | Expected error transactions | Actual dual-pixel commits |
+|---|---:|---:|---:|---:|---:|---:|
+| 4×4 | 2 | 5 | 112 | 636 | 55 | 29 |
+| 7×5 | 2 | 5 | 245 | 1,198 | 55 | 64 |
+| 8×8 | 2 | 5 | 448 | 2,060 | 55 | 121 |
+
+Each returned tag and epoch was checked at the actual host interface, while framebuffer color and depth matched the unchanged independent P102 reference, including signed 16-bit vertices outside the previous 8-bit wrapper.
+
+Real Yosys ECP5 mapping and nextpnr ECP5-85K placement/routing with CABGA756 speed6 seed1, 4×4 framebuffer, 5 MHz internal research clock target and unconstrained external pins **passed**. The complete P149 top exposes **111 of 365 available FPGA I/O bits**, maps **4 genuine DP16KD** RAM primitives and reports **21.4147 MHz** estimated clock Fmax. For context P148's separately routed research top reported 22.16 MHz, so the extra control logic did not improve tool clock speed.
+
+The final documentation commit requires its own exact-head CI rerun. No physical board clock, PCIe protocol, VRAM or gaming FPS evidence follows from these research results.
+
 ## Limits
 
 Transaction IDs and epochs do not establish authenticated commands, software drivers, production PCIe, actual external VRAM, physical FPGA pin constraints, measured game FPS or a finished graphics card. Soft reset abort is not automatic application-level replay. Do not estimate GPU readiness from PR numbers alone.
