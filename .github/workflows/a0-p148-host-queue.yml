@@ -1,0 +1,178 @@
+name: A0-X P148 ordered host queue, P102 frames and real ECP5
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p148_ordered_host_queue_top.sv'
+      - 'A0-GPU/tests/rtl/a0_p148_ordered_p102_diff_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p148_host_queue_stress_tb.sv'
+      - 'A0-GPU/docs/P148-ORDERED-HOST-QUEUE.md'
+      - '.github/workflows/a0-p148-host-queue.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p148_ordered_host_queue_top.sv'
+      - 'A0-GPU/tests/rtl/a0_p148_ordered_p102_diff_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p148_host_queue_stress_tb.sv'
+      - '.github/workflows/a0-p148-host-queue.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p148-real-ordered-bus-and-p102:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install genuine RTL tools
+        run: |
+          set -euo pipefail
+          if ! timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog; then
+            timeout 240s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog
+          fi
+          iverilog -V | head -2
+      - name: Compile actual P148, P147, P146/P145, P144/P139/P138 and original P102
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P148/rtl
+          sources=(
+            A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv
+            A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv
+            A0-GPU/rtl/graphics/a0_p68_depth_compare.sv
+            A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv
+            A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv
+            A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv
+            A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv
+            A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv
+            A0-GPU/rtl/graphics/a0_p145_dual_raster_depth_blend_trial.sv
+            A0-GPU/rtl/graphics/a0_p147_packed_command_top.sv
+            A0-GPU/rtl/graphics/a0_p148_ordered_host_queue_top.sv
+          )
+          iverilog -g2012 -s a0_p148_host_queue_stress_tb \
+            -o EVIDENCE/P148/rtl/queue.vvp "${sources[@]}" \
+            A0-GPU/tests/rtl/a0_p148_host_queue_stress_tb.sv \
+            2>&1 | tee EVIDENCE/P148/rtl/queue-compile.log
+          timeout 120s vvp EVIDENCE/P148/rtl/queue.vvp | tee EVIDENCE/P148/rtl/queue.log
+          grep -q '^P148_ORDERED_HOST_FIFO_PASS ' EVIDENCE/P148/rtl/queue.log
+          for shape in '4 4' '7 5' '8 8'; do
+            read -r w h <<< "$shape"
+            id="${w}x${h}"
+            iverilog -g2012 -s a0_p148_ordered_p102_diff_tb \
+              -Pa0_p148_ordered_p102_diff_tb.FRAME_WIDTH="$w" \
+              -Pa0_p148_ordered_p102_diff_tb.FRAME_HEIGHT="$h" \
+              -o "EVIDENCE/P148/rtl/$id.vvp" "${sources[@]}" \
+              A0-GPU/tests/rtl/a0_p148_ordered_p102_diff_tb.sv \
+              2>&1 | tee "EVIDENCE/P148/rtl/$id-compile.log"
+            timeout 120s vvp "EVIDENCE/P148/rtl/$id.vvp" | tee "EVIDENCE/P148/rtl/$id.log"
+            grep -q '^P148_FULL16_PACKED_BUS_P102_PASS ' "EVIDENCE/P148/rtl/$id.log"
+          done
+      - name: Strict queue saturation, 365 ordered requests and full RGB/depth matrices
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re,json
+          p=Path('EVIDENCE/P148/rtl')
+          q=(p/'queue.log').read_text()
+          pattern=r'^P148_ORDERED_HOST_FIFO_PASS depth=(\d+) burst_requests=(\d+) full_stalls=(\d+) held_response_cycles=(\d+) cancelled_epoch_requests=(\d+) post_reset_reads=(\d+) ordered_rejected=(\d+)$'
+          rows=re.findall(pattern,q,re.M)
+          assert len(rows)==1, q[-300:]
+          depth,burst,full,held,cancel,post,rejected=map(int,rows[0])
+          assert depth==4 and burst==365 and full>=12 and held>=12
+          assert cancel==5 and post==2 and rejected>=121
+          pattern2=r'^P148_FULL16_PACKED_BUS_P102_PASS size=(\d+)x(\d+) clears=(\d+) draws=(\d+) large_vertices=(\d+) frame_pixels_checked=(\d+) bus_txns=(\d+) rejected=(\d+) dual_commits=(\d+)$'
+          shapes={}
+          for shape,pixels in [('4x4',16),('7x5',35),('8x8',64)]:
+              text=(p/f'{shape}.log').read_text()
+              rec=re.findall(pattern2,text,re.M)
+              assert len(rec)==1,(shape,text[-300:])
+              w,h,clears,draws,wide,checks,bus,failed,dual=map(int,rec[0])
+              assert f'{w}x{h}'==shape and clears==2 and draws==5
+              assert wide>=4 and checks>=7*pixels
+              assert bus>=7*pixels*4 and failed>=15 and dual>=1
+              shapes[shape]={'verified_pixels':checks,'bus_transactions':bus,
+                             'out_of_8bit_vertices':wide,'rejected_commands':failed}
+          (p/'qualification.json').write_text(json.dumps({
+            'milestone':'P148','status':'PASS','ordered_FIFO_depth':depth,
+            'verified_burst_requests':burst,'full_queue_stall_cycles':full,
+            'stable_held_response_cycles':held,
+            'reset_cancelled_requests_in_epoch':cancel,
+            'after_reset_new_reads':post,'ordered_error_responses':rejected,
+            'independent_P102_frame_shapes':shapes,
+            'single_clock_only':True,'physical_PCIe':False
+          },indent=2))
+          print('P148_ORDERED_QUEUE_AND_P102_FRAME_GATES_PASS genuine RTL no skips')
+          PY
+      - name: Always upload RTL evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p148-real-rtl-host-queue-evidence
+          path: EVIDENCE/P148/rtl/
+          if-no-files-found: warn
+  p148-full-ecp5-route:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install genuine FPGA synthesis and place route
+        run: |
+          set -euo pipefail
+          if ! timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5; then
+            timeout 300s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5
+          fi
+          yosys -V
+          nextpnr-ecp5 --version
+      - name: Real Yosys synthesis of complete FIFO to framebuffer RAM
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P148/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv A0-GPU/rtl/graphics/a0_p145_dual_raster_depth_blend_trial.sv A0-GPU/rtl/graphics/a0_p147_packed_command_top.sv A0-GPU/rtl/graphics/a0_p148_ordered_host_queue_top.sv; hierarchy -check -top a0_p148_ordered_host_queue_top -chparam FRAME_WIDTH 4 -chparam FRAME_HEIGHT 4; synth_ecp5 -top a0_p148_ordered_host_queue_top -json EVIDENCE/P148/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P148/route/yosys.log
+      - name: Place and route real ECP5-85K full FIFO and raster top
+        run: |
+          set -euo pipefail
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P148/route/netlist.json \
+            --textcfg EVIDENCE/P148/route/route.config \
+            --report EVIDENCE/P148/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P148/route/nextpnr.log
+      - name: Enforce exact 77-bit host interface, actual BRAM and routed timing
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,collections
+          p=Path('EVIDENCE/P148/route')
+          top=json.loads((p/'netlist.json').read_text())['modules']['a0_p148_ordered_host_queue_top']
+          io=sum(len(v['bits']) for v in top['ports'].values())
+          assert io==77,('P148 pin budget changed',io)
+          cells=collections.Counter(v['type'] for v in top['cells'].values())
+          assert cells.get('DP16KD',0)>=2,'No real ECP5 bank memory'
+          assert not any(x.startswith('$') or x.startswith('a0_') or 'LATCH' in x.upper() for x in cells),cells
+          route=json.loads((p/'route.json').read_text())
+          for kind in ('TRELLIS_IO','TRELLIS_COMB'):
+              u=route['utilization'][kind]
+              assert 0<u['used']<=u['available'],(kind,u)
+          assert route['utilization']['TRELLIS_IO']['used']<=96
+          clocks=route['fmax']
+          assert clocks and any('clk' in name for name in clocks)
+          for name,v in clocks.items():
+              assert v['constraint']>=5 and v['achieved']>=v['constraint'],(name,v)
+          (p/'qualification.json').write_text(json.dumps({
+            'milestone':'P148','status':'PASS','ECP5_full_queue_and_raster_routed':True,
+            'io_bits':io,'mapped_DP16KD':cells['DP16KD'],
+            'mapped_cells':sum(cells.values()),'fmax_MHz':clocks,
+            'physical_pin_constraints':False,'real_PCIE':False,
+            'physical_GPU_FPS':False
+          },indent=2))
+          print('P148_REAL_ECP5_77_PIN_QUEUE_PASS complete real BRAM design')
+          print('P148_REAL_DP16KD',cells['DP16KD'])
+          for name,v in clocks.items():print('P148_TOOL_FMAX_MHZ',v['achieved'])
+          PY
+      - name: Upload ECP5 reports even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p148-real-ecp5-route-evidence
+          path: EVIDENCE/P148/route/
+          if-no-files-found: warn
