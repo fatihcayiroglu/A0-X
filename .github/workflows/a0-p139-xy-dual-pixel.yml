@@ -1,0 +1,144 @@
+name: A0-X P139 XY pixel bank-port RTL and ECP5 BRAM
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv'
+      - 'A0-GPU/tests/rtl/a0_p139_xy_dual_pixel_port_tb.sv'
+      - 'A0-GPU/docs/P139-XY-DUAL-PIXEL-PORT.md'
+      - '.github/workflows/a0-p139-xy-dual-pixel.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv'
+      - 'A0-GPU/tests/rtl/a0_p139_xy_dual_pixel_port_tb.sv'
+      - '.github/workflows/a0-p139-xy-dual-pixel.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p139-xy-real-rtl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install genuine Icarus
+        run: |
+          set -euo pipefail
+          if ! timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog; then
+            timeout 240s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog
+          fi
+          iverilog -V | head -2
+      - name: Independent XY golden model with actual P138 BRAM ports
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P139/rtl
+          for shape in '4 4' '7 5' '8 8' '32 32'; do
+            read -r w h <<< "$shape"
+            id="${w}x${h}"
+            iverilog -g2012 -s a0_p139_xy_dual_pixel_port_tb \
+              -Pa0_p139_xy_dual_pixel_port_tb.FRAME_WIDTH="$w" \
+              -Pa0_p139_xy_dual_pixel_port_tb.FRAME_HEIGHT="$h" \
+              -o "EVIDENCE/P139/rtl/$id.vvp" \
+              A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv \
+              A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv \
+              A0-GPU/tests/rtl/a0_p139_xy_dual_pixel_port_tb.sv \
+              2>&1 | tee "EVIDENCE/P139/rtl/$id-compile.log"
+            timeout 120s vvp "EVIDENCE/P139/rtl/$id.vvp" | tee "EVIDENCE/P139/rtl/$id.log"
+            grep -q '^P139_XY_DUAL_PIXEL_GOLDEN_PASS ' "EVIDENCE/P139/rtl/$id.log"
+          done
+      - name: Enforce exact non-vacuous XY cases
+        run: |
+          python3 - <<'PY'
+          import json,re
+          from pathlib import Path
+          p=Path('EVIDENCE/P139/rtl')
+          shapes={}
+          pattern=r'^P139_XY_DUAL_PIXEL_GOLDEN_PASS pixels=(\d+) cycles=(\d+) accepted=(\d+) dual=(\d+) conflicts=(\d+) reads=(\d+) writes=(\d+) invalid=(\d+)$'
+          for shape,pixels in [('4x4',16),('7x5',35),('8x8',64),('32x32',1024)]:
+              records=re.findall(pattern,(p/f'{shape}.log').read_text(),re.M)
+              assert len(records)==1,(shape,records)
+              px,cycles,accepted,dual,conflicts,reads,writes,invalid=map(int,records[0])
+              assert px==pixels and cycles>=500 and accepted>=1000 and dual>=500
+              assert conflicts>=160 and reads>=100 and writes>=250 and invalid>=3
+              shapes[shape]={'cycles':cycles,'accepted':accepted,
+                  'dual_accept_cycles':dual,'conflicts':conflicts,'invalid':invalid}
+          (p/'qualification.json').write_text(json.dumps({
+              'milestone':'P139','status':'PASS','real_iverilog':True,
+              'real_p138_instantiated':True,'independent_XY_oracle':True,
+              'shapes':shapes,'P102_renderer_integrated':False,'board_tested':False
+          },indent=2))
+          print('P139_XY_REAL_RTL_MATRIX_PASS 4 shapes with valid/invalid pixel requests')
+          PY
+      - name: Always upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p139-xy-real-rtl
+          path: EVIDENCE/P139/rtl/
+          if-no-files-found: warn
+  p139-full-ecp5-bram-route:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Yosys and nextpnr-ecp5
+        run: |
+          set -euo pipefail
+          if ! timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5; then
+            timeout 300s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5
+          fi
+          yosys -V
+          nextpnr-ecp5 --version
+      - name: Map actual XY frontend and P138 banks
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P139/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv; hierarchy -check -top a0_p139_xy_dual_pixel_port -chparam FRAME_WIDTH 4 -chparam FRAME_HEIGHT 4; synth_ecp5 -top a0_p139_xy_dual_pixel_port -json EVIDENCE/P139/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P139/route/yosys.log
+      - name: True ECP5-85K FPGA device placement and routing
+        run: |
+          set -euo pipefail
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P139/route/netlist.json \
+            --textcfg EVIDENCE/P139/route/route.config \
+            --report EVIDENCE/P139/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P139/route/nextpnr.log
+      - name: Require BRAM, fixed clock, bounded FPGA resources and real route
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import collections,json
+          p=Path('EVIDENCE/P139/route')
+          n=json.loads((p/'netlist.json').read_text())['modules']['a0_p139_xy_dual_pixel_port']
+          io=sum(len(v['bits']) for v in n['ports'].values())
+          assert 0<io<=320,io
+          kinds=collections.Counter(c['type'] for c in n['cells'].values())
+          assert sum(kinds.values())>0
+          assert kinds.get('DP16KD',0)>=2,'P139 must map at least two real FPGA BRAM primitives'
+          assert not any(t.startswith('$') or t.startswith('a0_') or 'LATCH' in t.upper() for t in kinds)
+          report=json.loads((p/'route.json').read_text())
+          for key in ('TRELLIS_IO','TRELLIS_COMB'):
+              u=report['utilization'][key]
+              assert 0<u['used']<=u['available'],key
+          clocks=report['fmax']
+          assert len(clocks)>=1 and any('clk' in key for key in clocks)
+          for key,v in clocks.items():
+              assert v['constraint']>=5 and v['achieved']>=v['constraint'],(key,v)
+          (p/'qualification.json').write_text(json.dumps({
+            'milestone':'P139','status':'PASS','standalone_XY_BRAM_pipeline':True,
+            'actual_ECP5_pnr':True,'bram_DP16KD':kinds['DP16KD'],
+            'resource_cell_types':kinds,'top_io_bits':io,'reported_fmax':clocks,
+            'P102_integrated':False,'physical_board_tested':False
+          },indent=2))
+          print('P139_XY_BRAM_ECP5_PASS actual standalone banked pixel storage')
+          print('P139_REAL_ECP5_BRAM_PRIMITIVES',kinds['DP16KD'])
+          PY
+      - name: Always upload mapping evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p139-real-ecp5-route
+          path: EVIDENCE/P139/route/
+          if-no-files-found: warn
