@@ -24,6 +24,7 @@ module a0_p140_raster_bram_diff_tb #(
   wire [23:0] host_color,host_depth;
   integer clears=0,draws=0,checked_pixels=0,ref_written=0,dut_written=0;
   integer completed_ref_writes=0,completed_bram_writes=0;
+  integer live_host_accepts=0,live_host_stalls=0;
 
   a0_triangle_scissor_depth_blend_p102 #(
     .FRAME_WIDTH(FRAME_WIDTH),.FRAME_HEIGHT(FRAME_HEIGHT)
@@ -64,7 +65,13 @@ module a0_p140_raster_bram_diff_tb #(
     .host_rsp_color(host_color),.host_rsp_depth(host_depth)
   );
   always @(posedge clk) begin
+    if(rst_n && host_read_valid && dut_busy) begin
+      if(host_read_ready)live_host_accepts=live_host_accepts+1;
+      else live_host_stalls=live_host_stalls+1;
+    end
     #1;
+    if(rst_n && dut_busy && host_rsp_valid && host_rsp_error)
+      $fatal(1,"P140 in-flight host read returned error at valid XY");
     if(rst_n && ref_wrote)ref_written=ref_written+1;
     if(rst_n && dut_wrote)dut_written=dut_written+1;
   end
@@ -147,11 +154,17 @@ module a0_p140_raster_bram_diff_tb #(
       x0=16'sh7fff;y0=16'sh8000;x1=-16'sd5;y1=16'sd9;
       tri_color=24'hff00ff;tri_depth=24'h000001;
       done_a=ref_tri_done;done_b=dut_tri_done;
+      // Concurrent debug access to the SAME coordinate during active
+      // triangle processing exercises lane-1 arbitration/backpressure.
+      host_read_valid=0;
       for(integer j=0;j<FRAME_WIDTH*FRAME_HEIGHT*8+100 && !(done_a&&done_b);j=j+1) begin
         @(negedge clk);
+        host_read_x=0;host_read_y=0;
+        host_read_valid=(j<14);
         if(ref_tri_done)done_a=1;
         if(dut_tri_done)done_b=1;
       end
+      host_read_valid=0;
       if(!(done_a&&done_b))
         $fatal(1,"P140 triangle not completed ref=%b dut=%b",done_a,done_b);
       draws=draws+1;
@@ -198,11 +211,12 @@ module a0_p140_raster_bram_diff_tb #(
     depth_compare_op=0;depth_write=1;blend_enable=0;scissor_enable=0;
     draw(-16'sd5,-16'sd5,16'sd20,-16'sd5,-16'sd5,16'sd20);
     if(clears!=2 || draws!=5 || checked_pixels<6*FRAME_WIDTH*FRAME_HEIGHT ||
-       completed_ref_writes<5 || completed_ref_writes!=completed_bram_writes)
+       completed_ref_writes<5 || completed_ref_writes!=completed_bram_writes ||
+       live_host_accepts<10 || live_host_stalls<1)
       $fatal(1,"P140 missing coverage clears=%0d draws=%0d checked=%0d writes ref=%0d dut=%0d",
         clears,draws,checked_pixels,completed_ref_writes,completed_bram_writes);
-    $display("P140_RASTER_BRAM_FRAME_EQUIVALENCE_PASS size=%0dx%0d clears=%0d draws=%0d checked=%0d ref_writes=%0d bram_writes=%0d",
-      FRAME_WIDTH,FRAME_HEIGHT,clears,draws,checked_pixels,completed_ref_writes,completed_bram_writes);
+    $display("P140_RASTER_BRAM_FRAME_EQUIVALENCE_PASS size=%0dx%0d clears=%0d draws=%0d checked=%0d ref_writes=%0d bram_writes=%0d host_accept=%0d host_stall=%0d",
+      FRAME_WIDTH,FRAME_HEIGHT,clears,draws,checked_pixels,completed_ref_writes,completed_bram_writes,live_host_accepts,live_host_stalls);
     $finish;
   end
   initial begin #6000000; $fatal(1,"P140 RTL differential watchdog"); end
