@@ -1,11 +1,11 @@
 `timescale 1ns/1ps
 // P138: experimental TWO-BANK 48-bit framebuffer scratchpad.
-// Two independent request lanes, exactly one access per bank per clock.
-// Address parity chooses bank; conflicts arbitrate lane 0 first, lane 1
-// must hold its request until ready. Responses are ONE-cycle registered
-// pulses, not backpressured; consumers must capture the pulse.
-// 48-bit data is packed {RGB888, DEPTH24}; this is NOT VRAM, not PCIe,
-// not integrated in P102, and not a qualified physical dual-port RAM.
+// Two independent request lanes, one selected access per bank per clock.
+// Different physical banks can service two reads, writes, or a mixture
+// in one clock. Same-bank conflict: lane 0 wins and lane 1 must retry.
+// Registered bank read ports are designed for FPGA RAM inference.
+// A fixed one-cycle response pulse has NO response backpressure.
+// Does not connect to P102, external VRAM, PCIe, scanout or board clocks.
 module a0_p138_dual_bank_framebuffer #(
     parameter integer FRAME_WIDTH=4,
     parameter integer FRAME_HEIGHT=4,
@@ -34,82 +34,108 @@ module a0_p138_dual_bank_framebuffer #(
     output logic rsp1_error,
     output logic [47:0] rsp1_rdata
 );
-    // Valid metadata is reset; data arrays intentionally are not cleared.
-    // First read after reset of an unwritten word is deterministic ZERO.
-    logic [47:0] bank0 [0:BANK_DEPTH-1];
-    logic [47:0] bank1 [0:BANK_DEPTH-1];
+    // Interleaved 48-bit packed {RGB888,depth24}, 2 banks.
+    // Data arrays deliberately have NO hardware reset. Only validity
+    // metadata resets. Unwritten locations return zero deterministically.
+    (* ram_style = "block" *) logic [47:0] bank0 [0:BANK_DEPTH-1];
+    (* ram_style = "block" *) logic [47:0] bank1 [0:BANK_DEPTH-1];
     logic [BANK_DEPTH-1:0] valid0,valid1;
+    logic [47:0] bank0_read_q,bank1_read_q;
 
     wire index0_ok = (32'(req0_index) < PIXELS);
     wire index1_ok = (32'(req1_index) < PIXELS);
-    wire bank0sel = req0_index[0];
-    wire bank1sel = req1_index[0];
-    wire collision = req0_valid && req1_valid &&
-                     index0_ok && index1_ok && (bank0sel == bank1sel);
+    wire collision = req0_valid && req1_valid && index0_ok && index1_ok &&
+                     (req0_index[0] == req1_index[0]);
     assign req0_ready = rst_n;
     assign req1_ready = rst_n && !collision;
-
     wire fire0 = req0_valid && req0_ready;
     wire fire1 = req1_valid && req1_ready;
     wire [ADDR_BITS-1:0] offset0 = req0_index >> 1;
     wire [ADDR_BITS-1:0] offset1 = req1_index >> 1;
 
-    // One physical write choice per bank. A concurrent access to the other
-    // bank is independent. No same-bank simultaneous read/write is accepted.
+    // Select exactly one physical operation for each bank. This explicit
+    // mux keeps bank0 and bank1 independent for ECP5 block RAM inference.
+    wire req0_bank0 = fire0 && index0_ok && !req0_index[0];
+    wire req0_bank1 = fire0 && index0_ok &&  req0_index[0];
+    wire req1_bank0 = fire1 && index1_ok && !req1_index[0];
+    wire req1_bank1 = fire1 && index1_ok &&  req1_index[0];
+
+    wire bank0_we = (req0_bank0 && req0_write) ||
+                    (req1_bank0 && req1_write);
+    wire bank1_we = (req0_bank1 && req0_write) ||
+                    (req1_bank1 && req1_write);
+    wire bank0_re = (req0_bank0 && !req0_write) ||
+                    (req1_bank0 && !req1_write);
+    wire bank1_re = (req0_bank1 && !req0_write) ||
+                    (req1_bank1 && !req1_write);
+
+    wire [ADDR_BITS-1:0] bank0_write_addr =
+        (req0_bank0 && req0_write) ? offset0 : offset1;
+    wire [ADDR_BITS-1:0] bank1_write_addr =
+        (req0_bank1 && req0_write) ? offset0 : offset1;
+    wire [47:0] bank0_write_data =
+        (req0_bank0 && req0_write) ? req0_wdata : req1_wdata;
+    wire [47:0] bank1_write_data =
+        (req0_bank1 && req0_write) ? req0_wdata : req1_wdata;
+    wire [ADDR_BITS-1:0] bank0_read_addr =
+        (req0_bank0 && !req0_write) ? offset0 : offset1;
+    wire [ADDR_BITS-1:0] bank1_read_addr =
+        (req0_bank1 && !req0_write) ? offset0 : offset1;
+
+    // Separate synchronous bank read data registers. No combinational
+    // read port and no memory content reset. Any read/write same bank
+    // in one clock is prevented by the ready arbitration.
+    always_ff @(posedge clk) begin
+        if (bank0_we) bank0[bank0_write_addr] <= bank0_write_data;
+        if (bank1_we) bank1[bank1_write_addr] <= bank1_write_data;
+        if (bank0_re) bank0_read_q <= bank0[bank0_read_addr];
+        if (bank1_re) bank1_read_q <= bank1[bank1_read_addr];
+    end
+
     always_ff @(posedge clk) begin
         if (!rst_n) begin
             valid0 <= '0;
             valid1 <= '0;
         end else begin
-            if (fire0 && index0_ok && req0_write) begin
-                if (!bank0sel) begin
-                    bank0[offset0] <= req0_wdata;
-                    valid0[offset0] <= 1'b1;
-                end else begin
-                    bank1[offset0] <= req0_wdata;
-                    valid1[offset0] <= 1'b1;
-                end
-            end
-            if (fire1 && index1_ok && req1_write) begin
-                if (!bank1sel) begin
-                    bank0[offset1] <= req1_wdata;
-                    valid0[offset1] <= 1'b1;
-                end else begin
-                    bank1[offset1] <= req1_wdata;
-                    valid1[offset1] <= 1'b1;
-                end
-            end
+            if (bank0_we) valid0[bank0_write_addr] <= 1'b1;
+            if (bank1_we) valid1[bank1_write_addr] <= 1'b1;
         end
     end
 
-    // Fixed one-cycle response contract: data and error become valid
-    // immediately after the accepting rising edge and are observed in that
-    // cycle; the next edge can emit another response without an extra bubble.
+    // Response lane metadata is captured on the same edge as each bank
+    // read. The bank-read registers feed only matching accepted lane(s).
+    logic read0_q,read1_q,read0_bank_q,read1_bank_q;
+    logic read0_initialized_q,read1_initialized_q;
     always_ff @(posedge clk) begin
         if (!rst_n) begin
-            rsp0_valid <= 1'b0; rsp0_error <= 1'b0; rsp0_rdata <= '0;
-            rsp1_valid <= 1'b0; rsp1_error <= 1'b0; rsp1_rdata <= '0;
+            rsp0_valid <= 1'b0;
+            rsp0_error <= 1'b0;
+            rsp1_valid <= 1'b0;
+            rsp1_error <= 1'b0;
+            read0_q <= 1'b0; read1_q <= 1'b0;
+            read0_bank_q <= 1'b0;read1_bank_q <= 1'b0;
+            read0_initialized_q <= 1'b0;
+            read1_initialized_q <= 1'b0;
         end else begin
             rsp0_valid <= fire0;
             rsp0_error <= fire0 && !index0_ok;
-            rsp0_rdata <= '0;
-            if (fire0 && index0_ok && !req0_write) begin
-                if (!bank0sel)
-                    rsp0_rdata <= valid0[offset0] ? bank0[offset0] : '0;
-                else
-                    rsp0_rdata <= valid1[offset0] ? bank1[offset0] : '0;
-            end
             rsp1_valid <= fire1;
             rsp1_error <= fire1 && !index1_ok;
-            rsp1_rdata <= '0;
-            if (fire1 && index1_ok && !req1_write) begin
-                if (!bank1sel)
-                    rsp1_rdata <= valid0[offset1] ? bank0[offset1] : '0;
-                else
-                    rsp1_rdata <= valid1[offset1] ? bank1[offset1] : '0;
-            end
+            read0_q <= fire0 && index0_ok && !req0_write;
+            read1_q <= fire1 && index1_ok && !req1_write;
+            read0_bank_q <= req0_index[0];
+            read1_bank_q <= req1_index[0];
+            read0_initialized_q <= index0_ok &&
+                (req0_index[0] ? valid1[offset0] : valid0[offset0]);
+            read1_initialized_q <= index1_ok &&
+                (req1_index[0] ? valid1[offset1] : valid0[offset1]);
         end
     end
+
+    assign rsp0_rdata = (rsp0_valid && read0_q && read0_initialized_q) ?
+        (read0_bank_q ? bank1_read_q : bank0_read_q) : 48'd0;
+    assign rsp1_rdata = (rsp1_valid && read1_q && read1_initialized_q) ?
+        (read1_bank_q ? bank1_read_q : bank0_read_q) : 48'd0;
 
     initial begin
         if (FRAME_WIDTH < 1 || FRAME_HEIGHT < 1 ||
