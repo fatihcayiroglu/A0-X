@@ -129,6 +129,7 @@ module a0_p142_dual_opaque_raster_bram #(
     wire req0_ready,req1_ready;
     wire mem_rsp0_valid,mem_rsp0_error;
     wire [47:0] mem_rsp0_data;
+    logic host_read_accepted_q;
     wire mem_rsp1_valid,mem_rsp1_error;
     wire [47:0] mem_rsp1_data;
 
@@ -154,7 +155,9 @@ module a0_p142_dual_opaque_raster_bram #(
     assign busy=state!=IDLE;
     assign host_read_ready=rst_n && initialized && state==IDLE &&
                            !clear_valid && !tri_valid && req0_ready;
-    assign host_rsp_valid=(state==IDLE) && mem_rsp0_valid;
+    // Do not expose the final draw/clear write acknowledgement as a
+    // spurious host read response on transition back into IDLE.
+    assign host_rsp_valid=host_read_accepted_q && mem_rsp0_valid;
     assign host_rsp_error=mem_rsp0_error;
     assign {host_rsp_color,host_rsp_depth}=mem_rsp0_data;
 
@@ -164,6 +167,7 @@ module a0_p142_dual_opaque_raster_bram #(
             state<=IDLE;
             scan_index<='0;
             initialized<=1'b0;
+            host_read_accepted_q<=1'b0;
             clear_done<=1'b0;tri_done<=1'b0;pixel_writes<='0;
             clear_color_q<='0;clear_depth_q<='0;
             draw_color_q<='0;draw_depth_q<='0;
@@ -176,6 +180,7 @@ module a0_p142_dual_opaque_raster_bram #(
             clear_done<=0;
             tri_done<=0;
             pixel_writes<=0;
+            host_read_accepted_q<=host_read_valid && host_read_ready;
             if(state==IDLE) begin
                 if(clear_valid && clear_ready) begin
                     clear_color_q<=clear_color;
