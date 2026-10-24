@@ -38,6 +38,26 @@ MODE reserved bits [31:16] and [7:5] must be zero or the entire write fails with
 - Genuine Yosys `synth_ecp5` and nextpnr `--85k --package CABGA756 --speed 6 --seed 1 --freq 5 --lpf-allow-unconstrained`, mapped **real P147 + P146/P145 + P144/P139/P138** with 4×4 framebuffer. Require at least **2 real `DP16KD` blocks**, no unmapped logic/latches and **<=96 exposed logical I/Os** against CABGA756 365-IO limit, with full utilization/timing evidence.
 - Preserve inherited P126/P127/P132/P134/P145/P146 workflows on the **exact final PR head**. Keep draft if any required test is missing/failed/pending.
 
+## Actual RTL and FPGA research results — 24 October 2026
+
+On code head `ad0ddf61`, actual Icarus ran the **real full raster + P144/P139/P138 BRAM** through the newly added request/response bus against the **unchanged original P102** golden frame for three geometries. Tests used triangle X/Y vertices **−257 and +1024** (which do not fit the previous 8-bit research wrapper), depth ALWAYS/LESS/LESS_EQUAL, alpha blending, depth writing off, scissor, degenerate triangle, busy-command rejection, invalid XY, bad register accesses, reserved MODE-bit rejection, completion/status polling and reset during draw. All color and depth pixels compared equal:
+
+| Frame size | Clears | Finished draws | Pixel color/depth comparisons | 32-bit bus transactions | Rejected requests | Actual two-pixel write cycles |
+|---|---:|---:|---:|---:|---:|---:|
+| 4×4 | 2 | 5 | 112 | 652 | 55 | 29 |
+| 7×5 | 2 | 5 | 245 | 1,234 | 55 | 64 |
+| 8×8 | 2 | 5 | 448 | 2,116 | 55 | 121 |
+
+All original P145 independent P102 framebuffer tests and P146 frozen-P145 A/B simulations were also rerun **on the same commit** and passed.
+
+Genuine full RTL Yosys ECP5 synthesis and nextpnr ECP5-85K (CABGA756, speed6, seed1, 4×4, unconstrained external pins, `--freq 5`) passed:
+- Actual top logical I/O bits and placed I/O cells: **76 / 365 available**, compared with **318** in prior narrow-vertex P145 research wrapper — **~76.1% fewer external signals**.
+- Actual mapped two-bank FPGA storage: **4 `DP16KD` BRAM primitives**. No unmapped design cells.
+- Tool-reported final single clock Fmax estimate **21.367 MHz**, close to P146's 21.43 MHz research model; independent device route still needs physical pin constraints to be meaningful on a board.
+- The narrower host bus has additional command/register transaction and polling overhead; it is not evidence that total graphics API throughput or game FPS improves.
+
+Latest documentation-head GitHub Actions checks must pass before merge. This research transport is **not yet an implemented PCIe host protocol or real hardware display card**.
+
 ## Nonclaims
 
 This is an **FPGA research register protocol**, not a real PCIe endpoint, motherboard interface, physical card or VRAM memory controller. Command transfer overhead and polling exist; no gaming frame-rate, system-wide GPU performance or production board-level electrical/timing guarantees follow from these checks.
