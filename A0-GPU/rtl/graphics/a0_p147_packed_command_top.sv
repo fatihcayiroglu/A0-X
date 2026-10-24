@@ -167,7 +167,7 @@ module a0_p147_packed_command_top #(
             REG_MODE:rsp_rdata<={16'd0,alpha_q,3'd0,scissor_enable_q,
                                     blend_q,depth_write_q,depth_op_q};
             REG_READ_XY:rsp_rdata<={host_y_q,host_x_q};
-            REG_STATUS:rsp_rdata<={24'd0,core_host_ready,core_tri_ready,
+            REG_STATUS:rsp_rdata<={23'd0,core_host_ready,core_tri_ready,
                                   core_clear_ready,pixel_cached_q,
                                   tri_done_sticky_q,clear_done_sticky_q,
                                   core_fault,core_busy,core_initialized};
