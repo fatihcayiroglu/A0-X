@@ -209,7 +209,7 @@ module a0_p151_microprogram_tb;
     if(bad_launches!=2)
       $fatal(1,"P151 insufficient rejected launch coverage");
     $display("P151_UNORM_SHADER_MICROPROGRAM_PASS programs=%0d retired=%0d RAW_checks=%0d ignored_busy_writes=%0d readback_checks=%0d fail_closed_launches=%0d register_count=8 instruction_slots=16",
-      programs_run+1,instructions_run+1,raw_hazards,ignored_busy_writes,read_checks,bad_launches);
+      programs_run,instructions_run,raw_hazards,ignored_busy_writes,read_checks,bad_launches);
     $finish;
   end
   initial begin #100000000;$fatal(1,"P151 golden_insns test watchdog");end
