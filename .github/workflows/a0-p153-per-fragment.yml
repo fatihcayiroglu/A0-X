@@ -3,14 +3,18 @@ on:
   pull_request:
     paths:
       - 'A0-GPU/rtl/graphics/a0_p153_fragment_shader_trial.sv'
+      - 'A0-GPU/rtl/graphics/a0_p153_packed_fragment_command_top.sv'
       - 'A0-GPU/tests/rtl/a0_p153_fragment_shader_p102_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p153_packed_fragment_p102_tb.sv'
       - 'A0-GPU/docs/P153-PER-FRAGMENT-SHADER.md'
       - '.github/workflows/a0-p153-per-fragment.yml'
   push:
     branches: [main]
     paths:
       - 'A0-GPU/rtl/graphics/a0_p153_fragment_shader_trial.sv'
+      - 'A0-GPU/rtl/graphics/a0_p153_packed_fragment_command_top.sv'
       - 'A0-GPU/tests/rtl/a0_p153_fragment_shader_p102_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p153_packed_fragment_p102_tb.sv'
       - '.github/workflows/a0-p153-per-fragment.yml'
   workflow_dispatch:
 permissions:
@@ -55,6 +59,26 @@ jobs:
               2>&1 | tee "EVIDENCE/P153/rtl/$id-compile.log"
             timeout 120s vvp "EVIDENCE/P153/rtl/$id.vvp" | tee "EVIDENCE/P153/rtl/$id.log"
             grep -q '^P153_REAL_PER_FRAGMENT_SHADER_P102_PASS ' "EVIDENCE/P153/rtl/$id.log"
+            iverilog -g2012 -s a0_p153_packed_fragment_p102_tb \\
+              -Pa0_p153_packed_fragment_p102_tb.FRAME_WIDTH="$w" \\
+              -Pa0_p153_packed_fragment_p102_tb.FRAME_HEIGHT="$h" \\
+              -o "EVIDENCE/P153/rtl/packed-$id.vvp" \\
+              A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv \\
+              A0-GPU/rtl/shader/a0_p151_unorm_microprogram.sv \\
+              A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv \\
+              A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv \\
+              A0-GPU/rtl/graphics/a0_p68_depth_compare.sv \\
+              A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv \\
+              A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv \\
+              A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv \\
+              A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv \\
+              A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv \\
+              A0-GPU/rtl/graphics/a0_p153_fragment_shader_trial.sv \\
+              A0-GPU/rtl/graphics/a0_p153_packed_fragment_command_top.sv \\
+              A0-GPU/tests/rtl/a0_p153_packed_fragment_p102_tb.sv \\
+              2>&1 | tee "EVIDENCE/P153/rtl/packed-$id-compile.log"
+            timeout 120s vvp "EVIDENCE/P153/rtl/packed-$id.vvp" | tee "EVIDENCE/P153/rtl/packed-$id.log"
+            grep -q '^P153_PACKED_PIXEL_SHADER_P102_PASS ' "EVIDENCE/P153/rtl/packed-$id.log"
           done
       - name: Require complete framebuffer, three distinct fragment programs and real stalls
         run: |
@@ -71,7 +95,8 @@ jobs:
               w,h,c,d,checks,inv,done,stall=map(int,rows[0])
               assert f'{w}x{h}'==shape and c==3 and d==3
               assert checks>=6*pixels and inv>=5 and done>=inv and stall>=1
-              results[shape]={'RGB_depth_pixel_comparisons':checks,
+              packed=(p/f'packed-{shape}.log').read_text()
+              rows2=re.findall(r'^P153_PACKED_PIXEL_SHADER_P102_PASS size=(\\d+)x(\\d+) pixels=(\\d+) covered=(\\d+) bus_txns=(\\d+) rejected=(\\d+) shader_invocations=(\\d+)
                 'independent_P102_covered_pixels_and_shader_invocations':inv,
                 'actual_P151_shader_completions':done,
                 'host_stall_cycles':stall}
@@ -90,4 +115,101 @@ jobs:
         with:
           name: p153-real-fragment-shader-rtl-evidence
           path: EVIDENCE/P153/rtl/
+          if-no-files-found: warn
+,packed,re.M)
+              assert len(rows2)==1,(shape,packed[-300:])
+              pw,ph,pr,pc,pbus,perr,pinv=map(int,rows2[0])
+              assert f'{pw}x{ph}'==shape and pr==pixels and pc==pinv and pc>=4
+              assert pbus>=4*pixels and perr>=6
+              results[shape]={'packed_bus_transactions':pbus,'packed_shader_invocations':pinv,
+                'RGB_depth_pixel_comparisons':checks,
+                'independent_P102_covered_pixels_and_shader_invocations':inv,
+                'actual_P151_shader_completions':done,
+                'host_stall_cycles':stall}
+          (p/'qualification.json').write_text(json.dumps({
+            'milestone':'P153','status':'PASS','actual_P151_once_per_covered_pixel':True,
+            'P102_coverage_independent_scalar_color':True,
+            'three_framebuffer_shapes':results,
+            'routed_ECP5_qualification':False,
+            'real_GPGPU_compiler_or_FPS':False
+          },indent=2))
+          print('P153_PER_FRAGMENT_SHADER_CORRECTNESS_PASS real RTL no skips')
+          PY
+      - name: Save complete HDL tests and comparison evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p153-real-fragment-shader-rtl-evidence
+          path: EVIDENCE/P153/rtl/
+          if-no-files-found: warn
+
+  p153-real-full-shader-raster-ECP5-route:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real ECP5 synthesis and routing
+        run: |
+          set -euo pipefail
+          if ! timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5; then
+            timeout 300s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5
+          fi
+          yosys -V
+          nextpnr-ecp5 --version
+      - name: Synthesize packed bus plus genuine SIMD ALU, microprogram and framebuffer BRAM
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P153/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv A0-GPU/rtl/shader/a0_p151_unorm_microprogram.sv A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv A0-GPU/rtl/graphics/a0_p153_shaded_triangle_trial.sv A0-GPU/rtl/graphics/a0_p153_packed_shaded_command_top.sv; hierarchy -check -top a0_p153_packed_shaded_command_top -chparam FRAME_WIDTH 4 -chparam FRAME_HEIGHT 4; synth_ecp5 -top a0_p153_packed_shaded_command_top -json EVIDENCE/P153/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P153/route/yosys.log
+      - name: Full FPGA route, ECP5-85K CABGA756 speed6 seed1 fixed 5MHz research clock
+        run: |
+          set -euo pipefail
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P153/route/netlist.json \
+            --textcfg EVIDENCE/P153/route/route.config \
+            --report EVIDENCE/P153/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P153/route/nextpnr.log
+      - name: Require both physical BRAM and DSP and exact narrow host port budget
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import collections,json
+          p=Path('EVIDENCE/P153/route')
+          m=json.loads((p/'netlist.json').read_text())['modules']['a0_p153_packed_shaded_command_top']
+          pins=sum(len(v['bits']) for v in m['ports'].values())
+          assert pins==76,('P153 physical research bus pin count changed',pins)
+          c=collections.Counter(v['type'] for v in m['cells'].values())
+          assert c.get('DP16KD',0)>=2,('Raster BRAM missing',c)
+          assert c.get('MULT18X18D',0)>=4,('Per-fragment programmable shader DSPs missing',c)
+          assert c.get('TRELLIS_FF',0)>=200,('Shader registers/BRAM transaction state missing',c)
+          assert not any(k.startswith('$') or k.startswith('a0_') or 'LATCH' in k.upper() for k in c),c
+          route=json.loads((p/'route.json').read_text())
+          for name in ('TRELLIS_IO','TRELLIS_COMB','TRELLIS_FF'):
+              u=route['utilization'][name]
+              assert 0<u['used']<=u['available'],(name,u)
+          assert route['utilization']['TRELLIS_IO']['used']<=96
+          fmax=route['fmax']
+          assert fmax and any('clk' in k for k in fmax)
+          for k,v in fmax.items():
+              assert v['constraint']>=5 and v['achieved']>=v['constraint'],(k,v)
+          (p/'qualification.json').write_text(json.dumps({
+            'milestone':'P153','status':'PASS','real_full_shaded_raster_ECP5_route':True,
+            'packed_command_bus_IO':pins,'mapped_BRAM':c['DP16KD'],
+            'mapped_DSP':c['MULT18X18D'],'mapped_FF':c['TRELLIS_FF'],
+            'routed_tool_Fmax_MHz':fmax,'physical_pin_constraints':False,
+            'real_shader_compiler_or_per_fragment_shader':False
+          },indent=2))
+          print('P153_REAL_PROGRAMMABLE_SHADER_DUAL_BRAM_ECP5_PASS')
+          print('P153_MAPPED_DP16KD',c['DP16KD'])
+          print('P153_MAPPED_SHADER_DSP',c['MULT18X18D'])
+          for k,v in fmax.items():print('P153_TOOL_ESTIMATED_FMAX_MHZ',v['achieved'])
+          PY
+      - name: Save real FPGA synthesis and timing evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p153-real-shader-plus-graphics-route
+          path: EVIDENCE/P153/route/
           if-no-files-found: warn
