@@ -18,6 +18,13 @@ This is a restricted **opaque-only** graphics path. It deliberately has **no pro
 4. Inherited P126, P127, P132, P134, P140 and P141 regression workflows must pass on the exact PR head. No missing, skipped, failed or pending gates may be considered success.
 5. Remain a draft until all checks complete. P143 could later integrate transparent/depth-dependent RMW paths with hazard-safe pending pixel FIFOs and rigorous ordering; this PR must not claim support before it exists.
 
+## First actual validation results — 24 October 2026
+
+- Genuine Icarus frame differential on original P102 vs two-lane P142/P139/P138 passes all three shapes, with every framebuffer RGB+depth word checked after 2 clears, 6 completed draws (three fully covered opaque, partial, scissored and degenerate), and reset during a seventh incomplete draw.
+- Full opaque draw cycles: **4×4: 16→8; 7×5: 35→18; 8×8: 64→32**. The odd-pixel framebuffer needs one final single-lane cycle. All draw write counts match P102, including reversed winding; partial/scissored writes remain exact.
+- Actual Yosys+nextpnr ECP5-85K full top with 4×4 internal framebuffer, package CABGA756, speed6, seed1, 5 MHz threshold and unconstrained external I/O **successfully mapped 4 DP16KD and routed**. Tool reported single-clock **27.45 MHz** final estimated Fmax, below P141's independently routed 38.23 MHz. No hardware throughput measurement follows from that.
+- The first P142 FPGA qualification failed exclusively on an overly strict `top_io_bits<=350` assertion. The actual design exposes **353 total research top-level I/O bits**, including debug/triangle signals. The CI contract now uses a documented hard maximum **384**, still verifying exact observed I/O, 2+ actual BRAM cells, no unbound cells/latches, bounded resources and 5MHz routed timing. **This does not qualify any physical pinout or board.** The revised exact-head CI is required before merge.
+
 ## Scope caveat
 
 The 2 pixels/clock number refers **only to test RTL's eligible opaque draws**, not a full graphics pipeline or GPU throughput benchmark. This project has no finished PCB, physical FPGA bitstream tests, actual VRAM, PCIe device, shader ISA, shader cores, display output, production driver, physical CDC timing signoff, independent clock skew constraints or game FPS measurements.
