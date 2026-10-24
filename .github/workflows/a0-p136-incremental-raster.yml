@@ -1,0 +1,155 @@
+name: A0-X P136 incremental raster exact RTL and ECP5 timing
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv'
+      - 'A0-GPU/tests/rtl/a0_p136_incremental_raster_diff_tb.sv'
+      - 'A0-GPU/docs/P136-INCREMENTAL-RASTER-EDGES.md'
+      - '.github/workflows/a0-p136-incremental-raster.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv'
+      - 'A0-GPU/tests/rtl/a0_p136_incremental_raster_diff_tb.sv'
+      - '.github/workflows/a0-p136-incremental-raster.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p136-real-raster-reference:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual Icarus simulator
+        run: |
+          set -euo pipefail
+          if ! timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog; then
+            timeout 240s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog
+          fi
+          iverilog -V | head -2
+      - name: Prove cycle-accurate P130 oracle over directed random stalls and resets
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P136/rtl
+          for dimensions in '8 8' '7 5' '4 4'; do
+            read -r w h <<< "$dimensions"
+            id="${w}x${h}"
+            iverilog -g2012 -s a0_p136_incremental_raster_diff_tb \
+              -Pa0_p136_incremental_raster_diff_tb.FRAME_WIDTH="$w" \
+              -Pa0_p136_incremental_raster_diff_tb.FRAME_HEIGHT="$h" \
+              -o "EVIDENCE/P136/rtl/$id.vvp" \
+              A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv \
+              A0-GPU/tests/rtl/a0_p130_p38_reference.sv \
+              A0-GPU/tests/rtl/a0_p136_incremental_raster_diff_tb.sv \
+              2>&1 | tee "EVIDENCE/P136/rtl/$id-compile.log"
+            timeout 120s vvp "EVIDENCE/P136/rtl/$id.vvp" | tee "EVIDENCE/P136/rtl/$id.log"
+            grep -q '^P136_INCREMENTAL_EDGE_DIFFERENTIAL_PASS ' "EVIDENCE/P136/rtl/$id.log"
+          done
+      - name: Preserve independent existing P130 edge-width differential regression
+        run: |
+          set -euo pipefail
+          iverilog -g2012 -s a0_p130_p38_width_equivalence_tb \
+            -o EVIDENCE/P136/rtl/p130-reference.vvp \
+            A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv \
+            A0-GPU/tests/rtl/a0_p130_p38_reference.sv \
+            A0-GPU/tests/rtl/a0_p130_p38_width_equivalence_tb.sv \
+            2>&1 | tee EVIDENCE/P136/rtl/p130-reference-compile.log
+          timeout 120s vvp EVIDENCE/P136/rtl/p130-reference.vvp \
+            | tee EVIDENCE/P136/rtl/p130-reference.log
+          grep -qx P130_P38_EXACT_WIDTH_RTL_EQUIVALENCE_PASS EVIDENCE/P136/rtl/p130-reference.log
+      - name: Require non-vacuous three geometry sizes and reference comparison
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,re
+          p=Path('EVIDENCE/P136/rtl')
+          cases={}
+          for size in ['8x8','7x5','4x4']:
+              m=re.search(r'P136_INCREMENTAL_EDGE_DIFFERENTIAL_PASS cycles=(\d+) triangles=(\d+) pixels=(\d+) stalled=(\d+) dimensions=(\d+)x(\d+)',(p/(size+'.log')).read_text())
+              assert m and int(m[1])>=500 and int(m[2])>=150
+              assert int(m[3])>=20 and int(m[4])>=2 and m[5]+'x'+m[6]==size
+              cases[size]={'cycles':int(m[1]),'triangles':int(m[2]),'pixels':int(m[3]),'stalled':int(m[4])}
+          assert 'P130_P38_EXACT_WIDTH_RTL_EQUIVALENCE_PASS' in (p/'p130-reference.log').read_text()
+          (p/'qualification.json').write_text(json.dumps({'status':'PASS','real_rtl_simulated':True,
+            'cycle_exact_64bit_reference':True,'sizes':cases,'physical_board_qualified':False},indent=2))
+          print('P136_INCREMENTAL_RASTER_REFERENCE_PASS three sizes and inherited P130')
+          PY
+      - name: Upload RTL logs even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-p136-raster-rtl-evidence
+          path: EVIDENCE/P136/rtl/
+          if-no-files-found: warn
+
+  p136-real-ecp5-mapped-raster:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install genuine Yosys and nextpnr toolchain
+        run: |
+          set -euo pipefail
+          if ! timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5; then
+            timeout 300s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5
+          fi
+          yosys -V
+          nextpnr-ecp5 --version
+      - name: Synthesize actual complete P136 raster and P135/P133 graphics chain
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P136/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv A0-GPU/rtl/graphics/a0_p132_command_bus.sv A0-GPU/rtl/graphics/a0_p133_async_fifo.sv A0-GPU/rtl/graphics/a0_p133_dual_clock_bridge.sv; hierarchy -check -top a0_p133_dual_clock_bridge -chparam FRAME_WIDTH 4 -chparam FRAME_HEIGHT 4; synth_ecp5 -top a0_p133_dual_clock_bridge -json EVIDENCE/P136/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P136/route/yosys.log
+      - name: Real ECP5-85K placed and routed at 5 MHz internal target
+        run: |
+          set -euo pipefail
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P136/route/netlist.json \
+            --textcfg EVIDENCE/P136/route/route.config \
+            --report EVIDENCE/P136/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P136/route/nextpnr.log
+      - name: Check device resources and report Fmax versus P135 baseline
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('EVIDENCE/P136/route')
+          n=json.loads((p/'netlist.json').read_text())
+          top=n['modules']['a0_p133_dual_clock_bridge']
+          ports=top['ports']
+          assert ports['host_clk']['bits']!=ports['gpu_clk']['bits']
+          io=sum(len(v['bits']) for v in ports.values())
+          assert 0<io<=96, f'Unexpected IO count {io}'
+          kinds=[v['type'] for v in top['cells'].values()]
+          assert kinds and not any(x.startswith('$') or x.startswith('a0_') or 'LATCH' in x.upper() for x in kinds)
+          r=json.loads((p/'route.json').read_text())
+          for k in ('TRELLIS_IO','TRELLIS_COMB'):
+              u=r['utilization'][k]
+              assert 0<u['used']<=u['available'], k
+          fmax=r['fmax']
+          assert len(fmax)>=2
+          for key,v in fmax.items():
+              assert v['constraint']>=5 and v['achieved']>=v['constraint'], (key,v)
+          gpu=[v['achieved'] for key,v in fmax.items() if 'gpu_clk' in key]
+          assert len(gpu)==1
+          assert gpu[0]>=36.50, f'GPU regression against P135 36.50 MHz baseline: {gpu[0]:.4f} MHz'
+          e={'milestone':'P136','status':'PASS','real_fpga_pnr':True,
+             'previous_p135_gpu_reported_fmax_mhz':36.50,
+             'candidate_reported_gpu_fmax_mhz':gpu[0],
+             'mapped_cells':len(kinds),'top_io_bits':io,'clocks':fmax,
+             'physical_cdc_qualified':False,'board_tested':False}
+          (p/'qualification.json').write_text(json.dumps(e,indent=2))
+          print('P136_ECP5_MAPPED_RASTER_PASS non-regressing GPU Fmax, research-only')
+          print('P136_GPU_FMAX_MHZ',gpu[0])
+          PY
+      - name: Upload mapped timing report even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a0-p136-raster-route-evidence
+          path: EVIDENCE/P136/route/
+          if-no-files-found: warn
