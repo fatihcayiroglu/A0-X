@@ -21,6 +21,8 @@ module a0_p153_fragment_shader_trial #(
   input logic [1:0] depth_compare_op,
   input logic depth_write,blend_enable,
   input logic [7:0] source_alpha,
+  input logic scissor_enable,
+  input logic [15:0] scissor_x,scissor_y,scissor_w,scissor_h,
   input logic [4:0] shader_program_length,
   input logic shader_reg_write_valid,
   input logic [2:0] shader_reg_write_index,
@@ -50,7 +52,8 @@ module a0_p153_fragment_shader_trial #(
   logic [$clog2(PIXELS+1)-1:0] clear_pos_q;
   logic [23:0] clear_rgb_q,clear_z_q,depth_q,color_q;
   logic [1:0] depth_op_q;
-  logic write_z_q,blend_q;
+  logic write_z_q,blend_q,scissor_enable_q;
+  logic [15:0] scissor_x_q,scissor_y_q,scissor_w_q,scissor_h_q;
   logic [7:0] alpha_q;
   logic [4:0] program_len_q;
   logic [15:0] px_q,py_q;
@@ -82,6 +85,17 @@ module a0_p153_fragment_shader_trial #(
   assign pixel_writes=rmw_written;
   wire clear_op=(state_q==CLEAR_ISSUE);
   wire pixel_op=(state_q==WRITE_PIXEL);
+  wire scissor_covered;
+  a0_p59_scissor_coverage fragment_scissor(
+    .pixel_x(raster_x),.pixel_y(raster_y),
+    .rect_x(scissor_x_q),.rect_y(scissor_y_q),
+    .rect_width(scissor_w_q),.rect_height(scissor_h_q),
+    .enable(scissor_enable_q),.covered(scissor_covered)
+  );
+  // P38 advances on *every* covered pixel, even if it lies outside the
+  // scissor rectangle; only accepted pixels invoke the expensive shader.
+  // No memory write or P151 start occurs for rejected pixels.
+  wire pixel_skip=(state_q==SCAN) && raster_pixel_valid && !scissor_covered;
   assign host_read_ready=rst_n && state_q==IDLE && initialized && !fault &&
                          !clear_valid && !tri_valid && !shader_reg_write_valid &&
                          !shader_insn_write_valid && rmw_host_ready;
@@ -93,7 +107,7 @@ module a0_p153_fragment_shader_trial #(
     .tri_valid(tri_valid && tri_ready),.tri_ready(raster_tri_ready),
     .x0(x0),.y0(y0),.x1(x1),.y1(y1),.x2(x2),.y2(y2),
     .pixel_valid(raster_pixel_valid),
-    .pixel_ready(state_q==WAIT_WRITE && rmw_rsp_valid && !rmw_rsp_error),
+    .pixel_ready(pixel_skip || (state_q==WAIT_WRITE && rmw_rsp_valid && !rmw_rsp_error)),
     .pixel_x(raster_x),.pixel_y(raster_y),.done(raster_done)
   );
   // Host config allowed only while idle, whereas every covered pixel
@@ -144,6 +158,8 @@ module a0_p153_fragment_shader_trial #(
       clear_pos_q<=0;clear_rgb_q<=0;clear_z_q<=0;
       depth_q<=0;color_q<=0;depth_op_q<=0;write_z_q<=0;
       blend_q<=0;alpha_q<=0;program_len_q<=0;
+      scissor_enable_q<=0;
+      scissor_x_q<=0;scissor_y_q<=0;scissor_w_q<=0;scissor_h_q<=0;
       px_q<=0;py_q<=0;pixel_count_q<=0;
       shaded_pixels<=0;last_shaded_rgb<=0;
       clear_done<=0;tri_done<=0;shader_done<=0;
@@ -161,6 +177,9 @@ module a0_p153_fragment_shader_trial #(
             write_z_q<=depth_write;
             blend_q<=blend_enable;
             alpha_q<=source_alpha;
+            scissor_enable_q<=scissor_enable;
+            scissor_x_q<=scissor_x;scissor_y_q<=scissor_y;
+            scissor_w_q<=scissor_w;scissor_h_q<=scissor_h;
             program_len_q<=shader_program_length;
             shaded_pixels<=0;
             state_q<=SCAN;
@@ -179,7 +198,7 @@ module a0_p153_fragment_shader_trial #(
         end
         SCAN:begin
           if(raster_done)begin tri_done<=1;state_q<=IDLE;end
-          else if(raster_pixel_valid)begin
+          else if(raster_pixel_valid && scissor_covered)begin
             px_q<=raster_x;py_q<=raster_y;
             state_q<=LOAD_PIXEL;
           end
