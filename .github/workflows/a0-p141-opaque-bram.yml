@@ -1,0 +1,166 @@
+name: A0-X P141 opaque BRAM fastpath measured cycles and FPGA fit
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p140_raster_bram_trial.sv'
+      - 'A0-GPU/tests/rtl/a0_p141_p140_reference.sv'
+      - 'A0-GPU/tests/rtl/a0_p141_opaque_bram_benchmark_tb.sv'
+      - 'A0-GPU/docs/P141-OPAQUE-BRAM-FASTPATH.md'
+      - '.github/workflows/a0-p141-opaque-bram.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p140_raster_bram_trial.sv'
+      - 'A0-GPU/tests/rtl/a0_p141_opaque_bram_benchmark_tb.sv'
+      - '.github/workflows/a0-p141-opaque-bram.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p141-real-ab-benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual RTL simulator
+        run: |
+          set -euo pipefail
+          if ! timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog; then
+            timeout 240s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog
+          fi
+          iverilog -V | head -2
+      - name: Run cycle-counted fast-path and original P140 frame differential
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P141/rtl
+          for shape in '4 4' '7 5' '8 8'; do
+            read -r w h <<< "$shape"
+            id="${w}x${h}"
+            iverilog -g2012 -s a0_p141_opaque_bram_benchmark_tb \
+              -Pa0_p141_opaque_bram_benchmark_tb.FRAME_WIDTH="$w" \
+              -Pa0_p141_opaque_bram_benchmark_tb.FRAME_HEIGHT="$h" \
+              -o "EVIDENCE/P141/rtl/$id.vvp" \
+              A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv \
+              A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv \
+              A0-GPU/rtl/graphics/a0_p68_depth_compare.sv \
+              A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv \
+              A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv \
+              A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv \
+              A0-GPU/rtl/graphics/a0_p140_raster_bram_trial.sv \
+              A0-GPU/tests/rtl/a0_p141_p140_reference.sv \
+              A0-GPU/tests/rtl/a0_p141_opaque_bram_benchmark_tb.sv \
+              2>&1 | tee "EVIDENCE/P141/rtl/$id-compile.log"
+            timeout 120s vvp "EVIDENCE/P141/rtl/$id.vvp" | tee "EVIDENCE/P141/rtl/$id.log"
+            grep -q '^P141_OPAQUE_FASTPATH_BENCHMARK_PASS ' "EVIDENCE/P141/rtl/$id.log"
+          done
+      - name: Enforce exact non-vacuous A/B cycle improvements, correct fallbacks
+        run: |
+          python3 - <<'PY'
+          import json,re
+          from pathlib import Path
+          p=Path('EVIDENCE/P141/rtl')
+          result={}
+          pattern=r'^P141_DRAW_METRIC_PASS shape=(\d+)x(\d+) mode=(\d+) optimized_cycles=(\d+) original_cycles=(\d+) writes=(\d+)$'
+          for shape,pixels in [('4x4',16),('7x5',35),('8x8',64)]:
+              rows=re.findall(pattern,(p/f'{shape}.log').read_text(),re.M)
+              assert len(rows)==4,(shape,rows)
+              modes={}
+              for w,h,m,optimized,original,writes in rows:
+                  assert f'{w}x{h}'==shape
+                  m,optimized,original,writes=map(int,(m,optimized,original,writes))
+                  assert m not in modes
+                  assert optimized>0 and original>0 and writes>=0
+                  if m in (0,3):
+                      assert optimized<original,(shape,m,optimized,original)
+                  else:
+                      assert optimized==original,(shape,m,optimized,original)
+                  if m==0:assert writes>=pixels//2
+                  modes[str(m)]={'candidate_cycles':optimized,'original_cycles':original,
+                                  'saved_cycles':original-optimized,'writes':writes}
+              assert sorted(modes)==['0','1','2','3']
+              assert 'P141_OPAQUE_FASTPATH_BENCHMARK_PASS' in (p/f'{shape}.log').read_text()
+              result[shape]=modes
+          (p/'qualification.json').write_text(json.dumps({
+             'status':'PASS','milestone':'P141','real_iverilog':True,
+             'frozen_P140_reference_compared':True,'modes':result,
+             'board_tested':False,'two_shaded_pixels_per_cycle':False
+          },indent=2))
+          print('P141_MEASURED_OPAQUE_CYCLE_SPEEDUP_PASS all three shapes plus safe fallbacks')
+          PY
+      - name: Upload RTL cycle and frame evidence on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p141-real-opaque-benchmark
+          path: EVIDENCE/P141/rtl/
+          if-no-files-found: warn
+
+  p141-ecp5-integrated-route:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual ECP5 synth and route tools
+        run: |
+          set -euo pipefail
+          if ! timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5; then
+            timeout 300s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5
+          fi
+          yosys -V
+          nextpnr-ecp5 --version
+      - name: Synthesize actual raster/depth/blend/XY/BRAM fast-path model
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P141/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv A0-GPU/rtl/graphics/a0_p140_raster_bram_trial.sv; hierarchy -check -top a0_p140_raster_bram_trial -chparam FRAME_WIDTH 4 -chparam FRAME_HEIGHT 4; synth_ecp5 -top a0_p140_raster_bram_trial -json EVIDENCE/P141/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P141/route/yosys.log
+      - name: Place and route real ECP5-85K, fixed research configuration
+        run: |
+          set -euo pipefail
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P141/route/netlist.json \
+            --textcfg EVIDENCE/P141/route/route.config \
+            --report EVIDENCE/P141/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P141/route/nextpnr.log
+      - name: Require real mapped BRAM, timing and report cost against P140
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,collections
+          p=Path('EVIDENCE/P141/route')
+          n=json.loads((p/'netlist.json').read_text())['modules']['a0_p140_raster_bram_trial']
+          io=sum(len(v['bits']) for v in n['ports'].values())
+          assert 0<io<=512,io
+          kinds=collections.Counter(c['type'] for c in n['cells'].values())
+          assert kinds.get('DP16KD',0)>=2,'P141 must map real ECP5 block RAM'
+          assert not any(t.startswith('$') or t.startswith('a0_') or 'LATCH' in t.upper() for t in kinds)
+          report=json.loads((p/'route.json').read_text())
+          for k in ('TRELLIS_IO','TRELLIS_COMB'):
+              u=report['utilization'][k]
+              assert 0<u['used']<=u['available'],k
+          clocks=report['fmax']
+          assert clocks and any('clk' in k for k in clocks)
+          for k,v in clocks.items():
+              assert v['constraint']>=5 and v['achieved']>=v['constraint'],(k,v)
+          (p/'qualification.json').write_text(json.dumps({
+             'milestone':'P141','status':'PASS','real_fpga_route':True,
+             'real_DP16KD':kinds.get('DP16KD',0),'top_io_bits':io,
+             'mapped_cells':sum(kinds.values()),'clock_estimates':clocks,
+             'previous_P140_mapped_Fmax_MHz':37.20,
+             'physical_board_tested':False,
+             'actual_per_pixel_FPS_measured':False
+          },indent=2))
+          print('P141_OPAQUE_BRAM_ECP5_PASS research-only placement and route')
+          print('P141_REAL_DP16KD',kinds['DP16KD'])
+          for clock,data in clocks.items():
+              print('P141_RESEARCH_FMAX',clock,round(data['achieved'],4))
+          PY
+      - name: Upload tool reports even if gate fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p141-ecp5-opaque-route
+          path: EVIDENCE/P141/route/
+          if-no-files-found: warn
