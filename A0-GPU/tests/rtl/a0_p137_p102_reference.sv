@@ -4,7 +4,7 @@
 // Not a physical VRAM, P43 command connection, PCIe device, or qualified RTL.
 // Unsynthesized/unverified until a real HDL gate runs. Debug reads are
 // asynchronous; storage may map to registers rather than block RAM.
-module a0_triangle_scissor_depth_blend_p102_p137_reference #
+module a0_triangle_scissor_depth_blend_p102_p137_reference #(
     parameter int FRAME_WIDTH = 8,
     parameter int FRAME_HEIGHT = 8,
     parameter int PIXELS = FRAME_WIDTH * FRAME_HEIGHT,
