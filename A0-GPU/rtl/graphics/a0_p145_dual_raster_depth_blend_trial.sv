@@ -1,5 +1,6 @@
 `timescale 1ns/1ps
-// P145 EXPERIMENTAL: P143's two row-major signed incremental edge
+// P146 EXPERIMENTAL: overlap completed pair response and next pair issue.
+// P145's P143 two row-major signed incremental edge
 // coverage candidates feed P144's two-lane depth test + RGB alpha blend
 // over real synchronous P139/P138 FPGA BRAM. Hold a pair until the
 // registered P144 completion pulse before advancing either edge state;
@@ -61,6 +62,11 @@ module a0_p145_dual_raster_depth_blend_trial #(
     logic signed [35:0] lane1_row0,lane1_row1,lane1_row2;
     logic signed [35:0] next_e0,next_e1,next_e2;
     logic signed [35:0] next_row0,next_row1,next_row2;
+    // Registered one-pair lookahead is computed in P144's BRAM read/write
+    // stage, *before* its completion. This avoids a two-step add chain
+    // feeding P144's incoming depth/alpha request in the same clock.
+    logic signed [35:0] ahead_e0_q,ahead_e1_q,ahead_e2_q;
+    logic signed [35:0] ahead_row0_q,ahead_row1_q,ahead_row2_q;
 
     wire [31:0] address0=32'(scan_index);
     wire [31:0] address1=address0+32'd1;
@@ -153,30 +159,56 @@ module a0_p145_dual_raster_depth_blend_trial #(
         end
     end
 
-    wire scissor0,scissor1;
-    a0_p59_scissor_coverage gate0(
-        .pixel_x(p0_x),.pixel_y(p0_y),
-        .rect_x(scissor_x_q),.rect_y(scissor_y_q),
-        .rect_width(scissor_w_q),.rect_height(scissor_h_q),
-        .enable(scissor_enable_q),.covered(scissor0));
-    a0_p59_scissor_coverage gate1(
-        .pixel_x(p1_x),.pixel_y(p1_y),
-        .rect_x(scissor_x_q),.rect_y(scissor_y_q),
-        .rect_width(scissor_w_q),.rect_height(scissor_h_q),
-        .enable(scissor_enable_q),.covered(scissor1));
-
-    wire write0=(state==DRAW) && scissor0 &&
-        hit_edges(edge0_q,edge1_q,edge2_q,
-                  ax,ay,bx,by,cx,cy,negative_winding);
-    wire write1=(state==DRAW) && lane1_present && scissor1 &&
-        hit_edges(lane1_e0,lane1_e1,lane1_e2,
-                  ax,ay,bx,by,cx,cy,negative_winding);
-
+    // P146: P144's registered completion is visible after P144 is idle.
+    // Launch the next pair on the same acceptance edge, except after
+    // errors or at the final pair. Preserve the original edge updates.
     wire clear_mode=(state==CLEAR);
     wire draw_mode=(state==DRAW);
     wire last_pair=(address0+32'd2>=PIXELS);
     wire rmw_op_ready,rmw_rsp_valid,rmw_rsp_error;
     wire [1:0] rmw_pixel_writes;
+    wire lookahead_issue=(clear_mode || draw_mode) && pair_inflight_q &&
+                           rmw_rsp_valid && !rmw_rsp_error && !last_pair &&
+                           rmw_op_ready;
+    wire [31:0] issue_address0=address0+(lookahead_issue?32'd2:32'd0);
+    wire [31:0] issue_address1=issue_address0+32'd1;
+    wire issue_lane1_present=issue_address1<PIXELS;
+    wire [15:0] issue_x0=16'(issue_address0%FRAME_WIDTH);
+    wire [15:0] issue_y0=16'(issue_address0/FRAME_WIDTH);
+    wire [15:0] issue_x1=16'(issue_address1%FRAME_WIDTH);
+    wire [15:0] issue_y1=16'(issue_address1/FRAME_WIDTH);
+    wire signed [35:0] issue_e0=lookahead_issue?ahead_e0_q:edge0_q;
+    wire signed [35:0] issue_e1=lookahead_issue?ahead_e1_q:edge1_q;
+    wire signed [35:0] issue_e2=lookahead_issue?ahead_e2_q:edge2_q;
+    wire signed [35:0] issue_row0=lookahead_issue?ahead_row0_q:row0_q;
+    wire signed [35:0] issue_row1=lookahead_issue?ahead_row1_q:row1_q;
+    wire signed [35:0] issue_row2=lookahead_issue?ahead_row2_q:row2_q;
+    wire signed [35:0] issue_lane1_e0=
+         (issue_x0==FRAME_WIDTH-1)?(issue_row0+step_y0):(issue_e0+step_x0);
+    wire signed [35:0] issue_lane1_e1=
+         (issue_x0==FRAME_WIDTH-1)?(issue_row1+step_y1):(issue_e1+step_x1);
+    wire signed [35:0] issue_lane1_e2=
+         (issue_x0==FRAME_WIDTH-1)?(issue_row2+step_y2):(issue_e2+step_x2);
+
+    wire scissor0,scissor1;
+    a0_p59_scissor_coverage gate0(
+        .pixel_x(issue_x0),.pixel_y(issue_y0),
+        .rect_x(scissor_x_q),.rect_y(scissor_y_q),
+        .rect_width(scissor_w_q),.rect_height(scissor_h_q),
+        .enable(scissor_enable_q),.covered(scissor0));
+    a0_p59_scissor_coverage gate1(
+        .pixel_x(issue_x1),.pixel_y(issue_y1),
+        .rect_x(scissor_x_q),.rect_y(scissor_y_q),
+        .rect_width(scissor_w_q),.rect_height(scissor_h_q),
+        .enable(scissor_enable_q),.covered(scissor1));
+
+    wire write0=(state==DRAW) && scissor0 &&
+        hit_edges(issue_e0,issue_e1,issue_e2,
+                  ax,ay,bx,by,cx,cy,negative_winding);
+    wire write1=(state==DRAW) && issue_lane1_present && scissor1 &&
+        hit_edges(issue_lane1_e0,issue_lane1_e1,issue_lane1_e2,
+                  ax,ay,bx,by,cx,cy,negative_winding);
+
     wire rmw_host_ready;
     wire eligible_host=(state==IDLE) && !clear_valid && !tri_valid;
     // The P144 packet interface serializes reads and simultaneous
@@ -186,12 +218,13 @@ module a0_p145_dual_raster_depth_blend_trial #(
       .FRAME_WIDTH(FRAME_WIDTH),.FRAME_HEIGHT(FRAME_HEIGHT)
     ) memory(
       .clk(clk),.rst_n(rst_n),
-      .op_valid((state==CLEAR || state==DRAW) && !pair_inflight_q),
+      .op_valid((state==CLEAR || state==DRAW) &&
+                (!pair_inflight_q || lookahead_issue)),
       .op_ready(rmw_op_ready),.op_clear(clear_mode),
       .lane0_valid(clear_mode || write0),
-      .lane1_valid((clear_mode && lane1_present) || write1),
-      .lane0_x(p0_x),.lane0_y(p0_y),
-      .lane1_x(p1_x),.lane1_y(p1_y),
+      .lane1_valid((clear_mode && issue_lane1_present) || write1),
+      .lane0_x(issue_x0),.lane0_y(issue_y0),
+      .lane1_x(issue_x1),.lane1_y(issue_y1),
       .source_rgb(clear_mode ? clear_color_q : draw_color_q),
       .source_depth(clear_mode ? clear_depth_q : draw_depth_q),
       .depth_compare_op(depth_op_q),.depth_write(depth_write_q),
@@ -224,6 +257,8 @@ module a0_p145_dual_raster_depth_blend_trial #(
             ax<=0;ay<=0;bx<=0;by<=0;cx<=0;cy<=0;
             negative_winding<=1'b0;
             edge0_q<=0;edge1_q<=0;edge2_q<=0;
+            ahead_e0_q<=0;ahead_e1_q<=0;ahead_e2_q<=0;
+            ahead_row0_q<=0;ahead_row1_q<=0;ahead_row2_q<=0;
             row0_q<=0;row1_q<=0;row2_q<=0;
             step_x0<=0;step_x1<=0;step_x2<=0;
             step_y0<=0;step_y1<=0;step_y2<=0;
@@ -265,10 +300,20 @@ module a0_p145_dual_raster_depth_blend_trial #(
                         state<=DRAW;
                 end
             end else if(state==CLEAR || state==DRAW) begin
+                // During the previous packet's *read/write* beat,
+                // calculate next pair edges in a register. P144 response
+                // becomes visible one edge later; the lookahead request
+                // then reads these already stable registers.
+                if(draw_mode && pair_inflight_q && !rmw_rsp_valid) begin
+                    ahead_e0_q<=next_e0; ahead_e1_q<=next_e1; ahead_e2_q<=next_e2;
+                    ahead_row0_q<=next_row0;
+                    ahead_row1_q<=next_row1;
+                    ahead_row2_q<=next_row2;
+                end
                 if(!pair_inflight_q && rmw_op_ready)
                     pair_inflight_q<=1'b1;
                 if(pair_inflight_q && rmw_rsp_valid) begin
-                    pair_inflight_q<=1'b0;
+                    pair_inflight_q<=lookahead_issue;
                     if(rmw_rsp_error) begin
                         // Never skip/advance a failed memory operation.
                         // Fail closed and latch a reset-recoverable fault.

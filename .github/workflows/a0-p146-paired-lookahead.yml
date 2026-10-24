@@ -1,0 +1,171 @@
+name: A0-X P146 dual pair completion lookahead, frozen P145 A/B and real ECP5
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p145_dual_raster_depth_blend_trial.sv'
+      - 'A0-GPU/tests/rtl/a0_p145_pre_p146_reference.sv'
+      - 'A0-GPU/tests/rtl/a0_p146_pair_lookahead_ab_tb.sv'
+      - 'A0-GPU/docs/P146-PAIR-COMPLETION-LOOKAHEAD.md'
+      - '.github/workflows/a0-p146-paired-lookahead.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p145_dual_raster_depth_blend_trial.sv'
+      - 'A0-GPU/tests/rtl/a0_p146_pair_lookahead_ab_tb.sv'
+      - '.github/workflows/a0-p146-paired-lookahead.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p146-frozen-p145-vs-p102-rtl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual Icarus RTL simulator
+        run: |
+          set -euo pipefail
+          if ! timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog; then
+            timeout 240s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog
+          fi
+          iverilog -V | head -2
+      - name: Compare exact frame pixels and accepted raster clocks against frozen P145
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P146/rtl
+          for shape in '4 4' '7 5' '8 8'; do
+            read -r w h <<< "$shape"
+            id="${w}x${h}"
+            iverilog -g2012 -s a0_p146_pair_lookahead_ab_tb \
+              -Pa0_p146_pair_lookahead_ab_tb.FRAME_WIDTH="$w" \
+              -Pa0_p146_pair_lookahead_ab_tb.FRAME_HEIGHT="$h" \
+              -o "EVIDENCE/P146/rtl/$id.vvp" \
+              A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv \
+              A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv \
+              A0-GPU/rtl/graphics/a0_p68_depth_compare.sv \
+              A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv \
+              A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv \
+              A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv \
+              A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv \
+              A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv \
+              A0-GPU/rtl/graphics/a0_p145_dual_raster_depth_blend_trial.sv \
+              A0-GPU/tests/rtl/a0_p145_pre_p146_reference.sv \
+              A0-GPU/tests/rtl/a0_p146_pair_lookahead_ab_tb.sv \
+              2>&1 | tee "EVIDENCE/P146/rtl/$id-compile.log"
+            timeout 120s vvp "EVIDENCE/P146/rtl/$id.vvp" | tee "EVIDENCE/P146/rtl/$id.log"
+            grep -q '^P146_PAIR_LOOKAHEAD_AB_PASS ' "EVIDENCE/P146/rtl/$id.log"
+          done
+      - name: Strict independent P102-equivalence and reduced draw-cycle ratchet
+        run: |
+          python3 - <<'PY'
+          import re,json
+          from pathlib import Path
+          p=Path('EVIDENCE/P146/rtl')
+          pattern=r'^P146_PAIR_LOOKAHEAD_AB_PASS size=(\d+)x(\d+) clears=(\d+) draws=(\d+) checked=(\d+) ref_writes=(\d+) bram_writes=(\d+) dual_write_cycles=(\d+) host_stall=(\d+) old_draw_cycles=(\d+) new_draw_cycles=(\d+) faster_draws=(\d+)$'
+          draw=r'^P146_DRAW_CYCLE_PASS shape=(\d+)x(\d+) old_cycles=(\d+) new_cycles=(\d+) writes=(\d+)$'
+          evidence={}
+          for shape,pixels in [('4x4',16),('7x5',35),('8x8',64)]:
+              txt=(p/f'{shape}.log').read_text()
+              rows=re.findall(pattern,txt,re.M)
+              assert len(rows)==1,(shape,txt[-300:])
+              w,h,clears,draws,checked,ref_writes,new_writes,dual,host_stall,old_cycles,new_cycles,faster=map(int,rows[0])
+              assert f'{w}x{h}'==shape and clears==2 and draws==5
+              assert checked>=6*pixels and ref_writes>=5 and ref_writes==new_writes
+              assert dual>=1 and host_stall>=1 and faster>=2
+              assert 0<new_cycles<old_cycles
+              details=re.findall(draw,txt,re.M)
+              assert len(details)==5,(shape,details)
+              assert all(int(row[3])<=int(row[2]) for row in details)
+              assert sum(int(row[3])<int(row[2]) for row in details)>=2
+              evidence[shape]={'pixels':pixels,'original_draw_cycles':old_cycles,
+                 'optimized_draw_cycles':new_cycles,'savings_percent':round((1-new_cycles/old_cycles)*100,2),
+                 'identical_committed_writes':ref_writes,'frame_readbacks':checked,
+                 'simultaneous_pixel_write_cycles':dual}
+          (p/'qualification.json').write_text(json.dumps({
+             'milestone':'P146','status':'PASS','actual_iverilog':True,
+             'frozen_real_P145_and_independent_P102':True,
+             'same_RGB_and_depth_every_pixel':True,'shapes':evidence,
+             'actual_board_clocks_or_FPS':False
+          },indent=2))
+          print('P146_TRUE_LOOKAHEAD_AB_RASTER_CYCLE_SAVING_PASS across three geometries')
+          PY
+      - name: Always upload exact RTL A/B evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p146-real-frame-and-cycle-AB
+          path: EVIDENCE/P146/rtl/
+          if-no-files-found: warn
+  p146-lookahead-ecp5-route:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Yosys nextpnr-ecp5 tools
+        run: |
+          set -euo pipefail
+          if ! timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5; then
+            timeout 300s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5
+          fi
+          yosys -V
+          nextpnr-ecp5 --version
+      - name: Synthesize actual raster/scissor/depth/blend plus P139/P138 RAM
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P146/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv A0-GPU/rtl/graphics/a0_p145_dual_raster_depth_blend_trial.sv A0-GPU/rtl/graphics/a0_p145_bounded_pin_top.sv; hierarchy -check -top a0_p145_bounded_pin_top -chparam FRAME_WIDTH 4 -chparam FRAME_HEIGHT 4; synth_ecp5 -top a0_p145_bounded_pin_top -json EVIDENCE/P146/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P146/route/yosys.log
+      - name: Place route actual P146 ECP5-85K model
+        run: |
+          set -euo pipefail
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P146/route/netlist.json \
+            --textcfg EVIDENCE/P146/route/route.config \
+            --report EVIDENCE/P146/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P146/route/nextpnr.log
+      - name: Check actual ECP5 BRAM count and complete timing
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import collections,json
+          p=Path('EVIDENCE/P146/route')
+          top=json.loads((p/'netlist.json').read_text())['modules']['a0_p145_bounded_pin_top']
+          io=sum(len(v['bits']) for v in top['ports'].values())
+          # CABGA756 has only 365 available TRELLIS_IO cells. Require real
+          # margin from the narrowed research vertex pin interface.
+          assert 0<io<=340,io
+          kinds=collections.Counter(c['type'] for c in top['cells'].values())
+          assert kinds.get('DP16KD',0)>=2,'P146 needs actual FPGA BRAM mapped from P138'
+          assert not any(x.startswith('$') or x.startswith('a0_') or 'LATCH' in x.upper() for x in kinds)
+          report=json.loads((p/'route.json').read_text())
+          for k in ('TRELLIS_IO','TRELLIS_COMB'):
+              u=report['utilization'][k]
+              assert 0<u['used']<=u['available'],k
+          clocks=report['fmax']
+          assert clocks and any('clk' in k for k in clocks)
+          for k,v in clocks.items():
+              assert v['constraint']>=5 and v['achieved']>=v['constraint'],(k,v)
+              # At an equal FPGA research configuration, a large Fmax drop
+              # can erase the observed command-to-done cycle savings.
+              # 20MHz is above the 4x4 parity point (~19.42MHz) relative
+              # to P145's 27.41MHz/24-cycle baseline.
+              assert v['achieved']>=20.0,('P146 research clock below 20MHz',k,v)
+          (p/'qualification.json').write_text(json.dumps({
+            'milestone':'P146','status':'PASS','actual_ECP5_mapped':True,
+            'DP16KD':kinds['DP16KD'],'top_io_bits':io,'cells':kinds,
+            'clocks':clocks,'paired_RMW_response_lookahead':True,
+            'P132_integrated':False,'bounded_8bit_vertex_interface':True,
+            'physical_board_tested':False
+          },indent=2))
+          print('P146_RASTER_BRAM_ECP5_PASS genuine full trial synthesis/route')
+          print('P146_REAL_ECP5_BRAM_PRIMITIVES',kinds['DP16KD'])
+          PY
+      - name: Always upload ECP5 route evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p146-real-lookahead-ecp5-route
+          path: EVIDENCE/P146/route/
+          if-no-files-found: warn
