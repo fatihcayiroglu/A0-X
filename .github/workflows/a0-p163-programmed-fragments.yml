@@ -2,6 +2,7 @@ name: A0-X P163 real programmable raster shader framebuffer
 on:
   pull_request:
     paths:
+      - 'A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv'
       - 'A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv'
       - 'A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv'
       - 'A0-GPU/tests/rtl/a0_p163_programmed_fragment_p102_tb.sv'
@@ -12,6 +13,7 @@ on:
   push:
     branches: [main]
     paths:
+      - 'A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv'
       - 'A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv'
       - 'A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv'
       - '.github/workflows/a0-p163-programmed-fragments.yml'
@@ -46,6 +48,7 @@ jobs:
             A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv \
             A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv \
             A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv \
+            A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv \
             A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv \
             A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv \
             A0-GPU/tests/rtl/a0_p163_programmed_fragment_p102_tb.sv \
@@ -75,7 +78,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p EVIDENCE/P163/route
-          yosys -p "read_verilog -sv A0-GPU/rtl/texture/a0_p156_nearest_texture.sv A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv; hierarchy -check -top a0_p163_packed_programmed_command_top; synth_ecp5 -top a0_p163_packed_programmed_command_top -json EVIDENCE/P163/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P163/route/yosys.log
+          yosys -p "read_verilog -sv A0-GPU/rtl/texture/a0_p156_nearest_texture.sv A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv; hierarchy -check -top a0_p163_packed_programmed_command_top; synth_ecp5 -top a0_p163_packed_programmed_command_top -json EVIDENCE/P163/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P163/route/yosys.log
           nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
             --json EVIDENCE/P163/route/netlist.json \
             --textcfg EVIDENCE/P163/route/route.config \
