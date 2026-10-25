@@ -20,13 +20,18 @@ module a0_p158_bilinear_texture(
   output logic [31:0] rsp_rgba,
   output logic rsp_present
 );
-  localparam logic [2:0] IDLE=0,ISSUE=1,WAIT_TEX=2,CALCULATE=3,OUTPUT=4;
+  // P159 area optimization: time-share a single four-channel lerp between
+  // two horizontal and one vertical calculations, instead of implementing
+  // all three at once (24 independent multipliers in P158).
+  localparam logic [2:0] IDLE=0,ISSUE=1,WAIT_TEX=2,
+                         HORIZONTAL0=3,HORIZONTAL1=4,VERTICAL=5,OUTPUT=6;
   logic [2:0] state_q;
   logic signed [15:0] base_x_q,base_y_q;
   logic [7:0] fx_q,fy_q,tag_q;
   logic repeat_q;
   logic [1:0] tap_q;
   logic [31:0] texel_q[0:3];
+  logic [31:0] top_row_q,bottom_row_q;
   logic [3:0] present_bits_q;
   wire tex_write_ready,tex_sample_ready,tex_rsp_valid,tex_rsp_present;
   wire [7:0] tex_rsp_id;
@@ -64,14 +69,24 @@ module a0_p158_bilinear_texture(
       lerp256=sum[15:8];
     end
   endfunction
-  logic [31:0] mixed;
+  logic [31:0] lerp_a,lerp_b,lerp_result;
+  logic [7:0] lerp_factor;
   always_comb begin
-    mixed=0;
+    case(state_q)
+      HORIZONTAL0:begin
+        lerp_a=texel_q[0];lerp_b=texel_q[1];lerp_factor=fx_q;
+      end
+      HORIZONTAL1:begin
+        lerp_a=texel_q[2];lerp_b=texel_q[3];lerp_factor=fx_q;
+      end
+      default:begin
+        lerp_a=top_row_q;lerp_b=bottom_row_q;lerp_factor=fy_q;
+      end
+    endcase
+    lerp_result=0;
     for(integer lane=0;lane<4;lane=lane+1)
-      mixed[8*lane+:8]=lerp256(
-        lerp256(texel_q[0][8*lane+:8],texel_q[1][8*lane+:8],fx_q),
-        lerp256(texel_q[2][8*lane+:8],texel_q[3][8*lane+:8],fx_q),
-        fy_q);
+      lerp_result[8*lane+:8]=lerp256(
+        lerp_a[8*lane+:8],lerp_b[8*lane+:8],lerp_factor);
   end
 
   always_ff @(posedge clk) begin
@@ -79,6 +94,7 @@ module a0_p158_bilinear_texture(
       state_q<=IDLE;
       base_x_q<=0;base_y_q<=0;fx_q<=0;fy_q<=0;
       tag_q<=0;repeat_q<=0;tap_q<=0;present_bits_q<=0;
+      top_row_q<=0;bottom_row_q<=0;
       rsp_id<=0;rsp_rgba<=0;rsp_present<=0;
       for(integer t=0;t<4;t=t+1)texel_q[t]<=0;
     end else begin
@@ -100,12 +116,20 @@ module a0_p158_bilinear_texture(
           end else begin
             texel_q[tap_q]<=tex_rsp_rgba;
             present_bits_q[tap_q]<=tex_rsp_present;
-            if(tap_q==2'd3)state_q<=CALCULATE;
+            if(tap_q==2'd3)state_q<=HORIZONTAL0;
             else begin tap_q<=tap_q+2'd1;state_q<=ISSUE;end
           end
         end
-        CALCULATE:begin
-          rsp_id<=tag_q;rsp_rgba<=mixed;
+        HORIZONTAL0:begin
+          top_row_q<=lerp_result;
+          state_q<=HORIZONTAL1;
+        end
+        HORIZONTAL1:begin
+          bottom_row_q<=lerp_result;
+          state_q<=VERTICAL;
+        end
+        VERTICAL:begin
+          rsp_id<=tag_q;rsp_rgba<=lerp_result;
           // Zero-weight taps cannot make an otherwise valid sample missing.
           rsp_present<=present_bits_q[0] &&
             ((fx_q==0)||present_bits_q[1]) &&

@@ -1,0 +1,69 @@
+name: A0-X P159 time-shared bilinear DSP area
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/texture/a0_p156_nearest_texture.sv'
+      - 'A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv'
+      - 'A0-GPU/tests/rtl/a0_p158_bilinear_texture_tb.sv'
+      - '.github/workflows/a0-p159-reused-dsp-bilinear.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv'
+      - '.github/workflows/a0-p159-reused-dsp-bilinear.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p159-real-rtl-and-area-optimized-ecp5:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual HDL simulator and FPGA toolchain
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y iverilog yosys nextpnr-ecp5
+      - name: Preserve exact P158 independent pixel oracle on P159 FSM
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P159
+          iverilog -g2012 -s a0_p158_bilinear_texture_tb \
+            -o EVIDENCE/P159/oracle.vvp \
+            A0-GPU/rtl/texture/a0_p156_nearest_texture.sv \
+            A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv \
+            A0-GPU/tests/rtl/a0_p158_bilinear_texture_tb.sv \
+            2>&1 | tee EVIDENCE/P159/compile.log
+          timeout 120s vvp EVIDENCE/P159/oracle.vvp | tee EVIDENCE/P159/oracle.log
+          grep -q '^P158_BILINEAR_BRAM_ORACLE_PASS checked=328 ' EVIDENCE/P159/oracle.log
+      - name: Require real routed BRAM and at most eight shared DSPs
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P159/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/texture/a0_p156_nearest_texture.sv A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv; hierarchy -check -top a0_p158_bilinear_texture; synth_ecp5 -top a0_p158_bilinear_texture -json EVIDENCE/P159/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P159/route/yosys.log
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P159/route/netlist.json \
+            --textcfg EVIDENCE/P159/route/route.config \
+            --report EVIDENCE/P159/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P159/route/nextpnr.log
+          python3 - <<'PY'
+          import collections,json
+          from pathlib import Path
+          d=Path('EVIDENCE/P159/route')
+          top=json.loads((d/'netlist.json').read_text())['modules']['a0_p158_bilinear_texture']
+          cells=collections.Counter(c['type'] for c in top['cells'].values())
+          assert cells.get('DP16KD',0)>=1, cells
+          assert 1<=cells.get('MULT18X18D',0)<=8, cells
+          assert not any(k.startswith('$') or k.startswith('a0_') or 'LATCH' in k.upper() for k in cells), cells
+          timing=json.loads((d/'route.json').read_text())['fmax']
+          assert timing and all(v['achieved']>=5 for v in timing.values()), timing
+          print('P159_REUSED_DSP_BRAM_ROUTE_PASS BRAM=%d DSP=%d prior_p158_DSP=24'%(cells['DP16KD'],cells['MULT18X18D']))
+          PY
+      - name: Save actual RTL and routing evidence, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p159-reused-dsp-bram-route
+          path: EVIDENCE/P159
+          if-no-files-found: warn
