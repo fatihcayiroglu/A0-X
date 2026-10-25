@@ -52,7 +52,8 @@ jobs:
             2>&1 | tee EVIDENCE/P163/rtl/compile.log
           timeout 180s vvp EVIDENCE/P163/rtl/programmed.vvp | tee EVIDENCE/P163/rtl/result.log
           grep -q '^P163_PROGRAMMED_P102_PASS ' EVIDENCE/P163/rtl/result.log
-          grep -q 'full_frame_pixels=64 ' EVIDENCE/P163/rtl/result.log
+          # Two clears + two drawn frames + the post-reset fault-case clear.
+          grep -q 'full_frame_pixels=80 ' EVIDENCE/P163/rtl/result.log
           grep -q 'missing_faults=1' EVIDENCE/P163/rtl/result.log
       - name: Preserve exact simulation artifacts on success or failure
         if: always()
