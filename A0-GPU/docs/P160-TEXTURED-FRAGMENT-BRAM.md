@@ -37,11 +37,18 @@ per-channel math, including clamp and repeat boundary UVs. Check 112 full
 frame pixels across four clears and three draws, exact covered-fragment
 counts, blocked host reads and a post-reset missing-texture fail-closed case.
 
-Genuine Yosys `synth_ecp5` and nextpnr ECP5-85K full route must infer at
-least **three true DP16KD BRAMs** (texture plus two framebuffer banks) and
-**eight DSP** primitives, with no unresolved cells/latches and a 5 MHz
-artificial tool timing target. Evidence is retained on any failure. These are
-tool estimates with unconstrained external pins, not physical board tests.
+The full parallel research top requires 439 external I/O bits, exceeding the
+ECP5-85K CABGA756's 365 available I/O cells. The separately named
+`a0_p160_fpga_fit_top` intentionally fixes clear/depth/blend/alpha defaults,
+while preserving the live real texture upload, triangle coordinates, UV
+offset, texture mode, ALU opcode/operand and host framebuffer read paths.
+It is a **limited-interface FPGA fit**, not proof that the unrestricted host
+interface fits this package. A future packed host protocol is necessary.
+Genuine Yosys `synth_ecp5` and nextpnr full route must infer at least **three
+true DP16KD BRAMs** (texture plus two framebuffer banks) and **eight DSP**
+primitives, with no unresolved cells/latches and a 5 MHz artificial tool
+timing target. Evidence is retained on failure. These are tool estimates with
+unconstrained external pins, not physical board tests.
 
 Future P161+ work: actual shader ISA texture fetch, interpolated vertex UVs,
 perspective correction, LOD/mipmaps, multi-fragment throughput, drivers and

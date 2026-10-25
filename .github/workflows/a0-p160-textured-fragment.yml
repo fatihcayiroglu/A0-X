@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'A0-GPU/rtl/graphics/a0_p160_textured_fragment_trial.sv'
+      - 'A0-GPU/rtl/graphics/a0_p160_fpga_fit_top.sv'
       - 'A0-GPU/tests/rtl/a0_p160_textured_fragment_p102_tb.sv'
       - 'A0-GPU/docs/P160-TEXTURED-FRAGMENT-BRAM.md'
       - '.github/workflows/a0-p160-textured-fragment.yml'
@@ -10,6 +11,7 @@ on:
     branches: [main]
     paths:
       - 'A0-GPU/rtl/graphics/a0_p160_textured_fragment_trial.sv'
+      - 'A0-GPU/rtl/graphics/a0_p160_fpga_fit_top.sv'
       - '.github/workflows/a0-p160-textured-fragment.yml'
   workflow_dispatch:
 permissions:
@@ -34,6 +36,7 @@ jobs:
             A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv \
             A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv \
             A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv \
+            A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv \
             A0-GPU/rtl/graphics/a0_p68_depth_compare.sv \
             A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv \
             A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv \
@@ -65,7 +68,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p EVIDENCE/P160/route
-          yosys -p "read_verilog -sv A0-GPU/rtl/texture/a0_p156_nearest_texture.sv A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv A0-GPU/rtl/graphics/a0_p160_textured_fragment_trial.sv; hierarchy -check -top a0_p160_textured_fragment_trial; synth_ecp5 -top a0_p160_textured_fragment_trial -json EVIDENCE/P160/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P160/route/yosys.log
+          yosys -p "read_verilog -sv A0-GPU/rtl/texture/a0_p156_nearest_texture.sv A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv A0-GPU/rtl/graphics/a0_p160_textured_fragment_trial.sv A0-GPU/rtl/graphics/a0_p160_fpga_fit_top.sv; hierarchy -check -top a0_p160_fpga_fit_top; synth_ecp5 -top a0_p160_fpga_fit_top -json EVIDENCE/P160/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P160/route/yosys.log
           nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
             --json EVIDENCE/P160/route/netlist.json \
             --textcfg EVIDENCE/P160/route/route.config \
@@ -76,14 +79,16 @@ jobs:
           import collections,json
           from pathlib import Path
           p=Path('EVIDENCE/P160/route')
-          m=json.loads((p/'netlist.json').read_text())['modules']['a0_p160_textured_fragment_trial']
+          m=json.loads((p/'netlist.json').read_text())['modules']['a0_p160_fpga_fit_top']
+          pins=sum(len(port['bits']) for port in m['ports'].values())
+          assert pins<=365, ('ECP5 CABGA756 physical I/O limit',pins)
           cells=collections.Counter(v['type'] for v in m['cells'].values())
           assert cells.get('DP16KD',0)>=3, ('texture + two framebuffer banks missing',cells)
           assert cells.get('MULT18X18D',0)>=8, ('real texture/shader DSPs missing',cells)
           assert not any(x.startswith('$') or x.startswith('a0_') or 'LATCH' in x.upper() for x in cells),cells
           timing=json.loads((p/'route.json').read_text())['fmax']
           assert timing and all(x['achieved']>=5 for x in timing.values()), timing
-          print('P160_FULL_TEXTURED_FRAGMENT_ECP5_PASS BRAM=%d DSP=%d'%(cells['DP16KD'],cells['MULT18X18D']))
+          print('P160_LIMITED_IO_TEXTURED_FRAGMENT_ECP5_PASS IO=%d BRAM=%d DSP=%d'%(pins,cells['DP16KD'],cells['MULT18X18D']))
           PY
       - name: Preserve full synthesis and route evidence on failure
         if: always()
