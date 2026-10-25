@@ -1,0 +1,251 @@
+`timescale 1ns/1ps
+// P163: actual raster P38 -> per-fragment P162 shader program (with TEX)
+// -> real P144 depth/blend RGB BRAM. Sequential research renderer only.
+// All 8 shader registers are initialized per covered pixel: R0 is signed
+// screen Q8.8 texel coordinates, R1..R7 are user-defined draw seeds.
+module a0_p163_programmed_fragment_core #(
+  parameter integer FRAME_WIDTH=4,FRAME_HEIGHT=4,
+  parameter integer PIXELS=FRAME_WIDTH*FRAME_HEIGHT
+)(
+  input logic clk,rst_n,
+  input logic seed_write_valid,
+  output logic seed_write_ready,
+  input logic [2:0] seed_write_index,
+  input logic [31:0] seed_write_data,
+  input logic insn_write_valid,
+  output logic insn_write_ready,
+  input logic [3:0] insn_write_index,
+  input logic [24:0] insn_write_data,
+  input logic tex_write_valid,
+  output logic tex_write_ready,
+  input logic [3:0] tex_write_x,tex_write_y,
+  input logic [31:0] tex_write_rgba,
+  input logic clear_valid,
+  output logic clear_ready,clear_done,
+  input logic [23:0] clear_color,clear_depth,
+  input logic tri_valid,
+  output logic tri_ready,tri_done,
+  input logic signed [15:0] x0,y0,x1,y1,x2,y2,
+  input logic [23:0] tri_depth,
+  input logic [1:0] depth_compare_op,
+  input logic depth_write,blend_enable,
+  input logic [7:0] source_alpha,
+  input logic signed [15:0] uv_offset_u,uv_offset_v,
+  input logic [4:0] program_length,
+  input logic [2:0] output_reg,
+  output logic initialized,busy,fault,
+  output logic [15:0] shaded_pixels,shader_instructions,texture_operations,
+  output logic [23:0] last_shaded_rgb,
+  input logic host_read_valid,
+  output logic host_read_ready,
+  input logic [15:0] host_read_x,host_read_y,
+  output logic host_rsp_valid,host_rsp_error,
+  output logic [23:0] host_rsp_color,host_rsp_depth
+);
+  localparam logic [3:0]
+    IDLE=0,CLEAR_ISSUE=1,CLEAR_WAIT=2,SCAN=3,PREP_REG=4,
+    LAUNCH_SHADER=5,WAIT_SHADER=6,WRITE_PIXEL=7,WAIT_WRITE=8,FAILED=9;
+  logic [3:0] state_q;
+  logic initialized_q,fault_q;
+  logic [$clog2(PIXELS+1)-1:0] clear_pos_q;
+  logic [2:0] seed_ptr_q,output_reg_q;
+  logic [31:0] seed_regs[0:7];
+  logic [4:0] length_q;
+  logic signed [15:0] uv_u_q,uv_v_q;
+  logic [23:0] clear_rgb_q,clear_z_q,depth_q,color_q;
+  logic [1:0] depth_op_q;
+  logic depth_write_q,blend_q;
+  logic [7:0] alpha_q;
+  logic [15:0] px_q,py_q;
+
+  wire raster_ready,raster_pixel_valid,raster_done;
+  wire [15:0] raster_x,raster_y;
+  wire shader_ready,shader_busy,shader_done,shader_fault;
+  wire [31:0] shader_data;
+  wire [4:0] shader_retired,shader_tex_count;
+  wire shader_tex_ready;
+  wire rmw_ready,rmw_rsp_valid,rmw_rsp_error,rmw_host_ready;
+  wire [1:0] rmw_written;
+  wire mem_host_valid,mem_host_error;
+  wire [23:0] mem_host_color,mem_host_depth;
+  wire [15:0] clear_x=16'(clear_pos_q%FRAME_WIDTH);
+  wire [15:0] clear_y=16'(clear_pos_q/FRAME_WIDTH);
+  wire signed [15:0] tex_u=$signed(px_q <<< 8)+uv_u_q;
+  wire signed [15:0] tex_v=$signed(py_q <<< 8)+uv_v_q;
+  wire [31:0] shader_seed=seed_ptr_q==0 ? {tex_v,tex_u} : seed_regs[seed_ptr_q];
+  wire clear_op=state_q==CLEAR_ISSUE;
+  wire pixel_op=state_q==WRITE_PIXEL;
+  wire config_attempt=seed_write_valid || insn_write_valid || tex_write_valid;
+  wire config_busy=clear_valid || tri_valid || host_read_valid;
+  assign initialized=initialized_q && !clear_op && state_q!=CLEAR_WAIT;
+  assign fault=fault_q || shader_fault;
+  assign busy=state_q!=IDLE;
+  assign seed_write_ready=rst_n && state_q==IDLE && !fault &&
+    seed_write_index!=0 && !insn_write_valid && !tex_write_valid &&
+    !config_busy && shader_ready;
+  assign insn_write_ready=rst_n && state_q==IDLE && !fault &&
+    !seed_write_valid && !tex_write_valid && !config_busy && shader_ready;
+  assign tex_write_ready=rst_n && state_q==IDLE && !fault &&
+    !seed_write_valid && !insn_write_valid && !config_busy && shader_tex_ready;
+  assign clear_ready=rst_n && state_q==IDLE && !fault &&
+    !tri_valid && !host_read_valid && !config_attempt && rmw_ready && shader_ready;
+  assign tri_ready=rst_n && state_q==IDLE && initialized && !fault &&
+    program_length>=1 && program_length<=16 &&
+    !clear_valid && !host_read_valid && !config_attempt &&
+    raster_ready && rmw_ready && shader_ready;
+  assign host_read_ready=rst_n && state_q==IDLE && initialized && !fault &&
+    !clear_valid && !tri_valid && !config_attempt && rmw_host_ready;
+  assign host_rsp_valid=state_q==IDLE && mem_host_valid;
+  assign host_rsp_error=state_q==IDLE && mem_host_error;
+  assign host_rsp_color=host_rsp_valid?mem_host_color:24'd0;
+  assign host_rsp_depth=host_rsp_valid?mem_host_depth:24'd0;
+
+  a0_triangle_coverage_p38 #(.FRAME_WIDTH(FRAME_WIDTH),
+     .FRAME_HEIGHT(FRAME_HEIGHT)) raster(
+    .clk(clk),.rst_n(rst_n),
+    .tri_valid(tri_valid && tri_ready),.tri_ready(raster_ready),
+    .x0(x0),.y0(y0),.x1(x1),.y1(y1),.x2(x2),.y2(y2),
+    .pixel_valid(raster_pixel_valid),
+    .pixel_ready(state_q==WAIT_WRITE && rmw_rsp_valid && !rmw_rsp_error),
+    .pixel_x(raster_x),.pixel_y(raster_y),.done(raster_done)
+  );
+  a0_p162_textured_microprogram shader(
+    .clk(clk),.rst_n(rst_n),
+    .reg_write_valid(state_q==PREP_REG && shader_ready),
+    .reg_write_index(seed_ptr_q),.reg_write_data(shader_seed),
+    .reg_read_index(output_reg_q),.reg_read_data(shader_data),
+    .insn_write_valid(insn_write_valid && insn_write_ready),
+    .insn_write_index(insn_write_index),.insn_write_data(insn_write_data),
+    .texture_write_valid(tex_write_valid && tex_write_ready),
+    .texture_write_ready(shader_tex_ready),
+    .texture_write_x(tex_write_x),.texture_write_y(tex_write_y),
+    .texture_write_rgba(tex_write_rgba),
+    .start(state_q==LAUNCH_SHADER && shader_ready),
+    .start_length(length_q),.ready(shader_ready),.busy(shader_busy),
+    .done(shader_done),.fault(shader_fault),
+    .retired_count(shader_retired),.texture_retired_count(shader_tex_count)
+  );
+  a0_p144_dual_depth_blend_rmw #(.FRAME_WIDTH(FRAME_WIDTH),
+     .FRAME_HEIGHT(FRAME_HEIGHT)) framebuffer(
+    .clk(clk),.rst_n(rst_n),
+    .op_valid(clear_op || pixel_op),.op_ready(rmw_ready),
+    .op_clear(clear_op),
+    .lane0_valid(1'b1),.lane1_valid(1'b0),
+    .lane0_x(clear_op?clear_x:px_q),
+    .lane0_y(clear_op?clear_y:py_q),
+    .lane1_x(16'd0),.lane1_y(16'd0),
+    .source_rgb(clear_op?clear_rgb_q:color_q),
+    .source_depth(clear_op?clear_z_q:depth_q),
+    .depth_compare_op(depth_op_q),.depth_write(depth_write_q),
+    .blend_enable(blend_q),.source_alpha(alpha_q),
+    .rsp_valid(rmw_rsp_valid),.rsp_error(rmw_rsp_error),
+    .rsp_pixel_written(rmw_written),
+    .host_read_valid(host_read_valid && state_q==IDLE &&
+      !clear_valid && !tri_valid && !config_attempt),
+    .host_read_ready(rmw_host_ready),
+    .host_read_x(host_read_x),.host_read_y(host_read_y),
+    .host_rsp_valid(mem_host_valid),.host_rsp_error(mem_host_error),
+    .host_rsp_color(mem_host_color),.host_rsp_depth(mem_host_depth)
+  );
+
+  integer i;
+  always_ff @(posedge clk) begin
+    if(!rst_n)begin
+      state_q<=IDLE;initialized_q<=0;fault_q<=0;
+      clear_pos_q<=0;seed_ptr_q<=0;output_reg_q<=0;length_q<=0;
+      uv_u_q<=0;uv_v_q<=0;
+      clear_rgb_q<=0;clear_z_q<=0;depth_q<=0;color_q<=0;
+      depth_op_q<=0;depth_write_q<=0;blend_q<=0;alpha_q<=0;
+      px_q<=0;py_q<=0;
+      shaded_pixels<=0;shader_instructions<=0;texture_operations<=0;
+      last_shaded_rgb<=0;clear_done<=0;tri_done<=0;
+      for(i=0;i<8;i=i+1)seed_regs[i]<=0;
+    end else begin
+      clear_done<=0;tri_done<=0;
+      case(state_q)
+        IDLE:begin
+          // Fail closed on ambiguous simultaneous host control classes.
+          if((seed_write_valid && (insn_write_valid || tex_write_valid || config_busy)) ||
+             (insn_write_valid && (tex_write_valid || config_busy)) ||
+             (tex_write_valid && config_busy) ||
+             (clear_valid && (tri_valid || host_read_valid)) ||
+             (tri_valid && host_read_valid))begin
+            fault_q<=1;state_q<=FAILED;
+          end else if(seed_write_valid && seed_write_index==0)begin
+            fault_q<=1;state_q<=FAILED;
+          end else if(seed_write_valid && seed_write_ready)begin
+            seed_regs[seed_write_index]<=seed_write_data;
+          end else if(clear_valid && clear_ready)begin
+            clear_rgb_q<=clear_color;clear_z_q<=clear_depth;
+            clear_pos_q<=0;initialized_q<=0;
+            shaded_pixels<=0;shader_instructions<=0;texture_operations<=0;
+            state_q<=CLEAR_ISSUE;
+          end else if(tri_valid && program_length==0)begin
+            fault_q<=1;state_q<=FAILED;
+          end else if(tri_valid && tri_ready)begin
+            depth_q<=tri_depth;depth_op_q<=depth_compare_op;
+            depth_write_q<=depth_write;blend_q<=blend_enable;
+            alpha_q<=source_alpha;
+            uv_u_q<=uv_offset_u;uv_v_q<=uv_offset_v;
+            length_q<=program_length;output_reg_q<=output_reg;
+            shaded_pixels<=0;shader_instructions<=0;texture_operations<=0;
+            state_q<=SCAN;
+          end
+        end
+        CLEAR_ISSUE:if(rmw_ready)state_q<=CLEAR_WAIT;
+        CLEAR_WAIT:if(rmw_rsp_valid)begin
+          if(rmw_rsp_error)begin fault_q<=1;state_q<=FAILED;end
+          else if(clear_pos_q==PIXELS-1)begin
+            initialized_q<=1;clear_done<=1;state_q<=IDLE;
+          end else begin clear_pos_q<=clear_pos_q+1'b1;state_q<=CLEAR_ISSUE;end
+        end
+        SCAN:begin
+          if(raster_done)begin tri_done<=1;state_q<=IDLE;end
+          else if(raster_pixel_valid)begin
+            px_q<=raster_x;py_q<=raster_y;
+            seed_ptr_q<=0;state_q<=PREP_REG;
+          end
+        end
+        PREP_REG:begin
+          if(shader_fault)begin fault_q<=1;state_q<=FAILED;end
+          else if(shader_ready)begin
+            if(seed_ptr_q==3'd7)state_q<=LAUNCH_SHADER;
+            else seed_ptr_q<=seed_ptr_q+3'd1;
+          end
+        end
+        LAUNCH_SHADER:begin
+          if(shader_fault)begin fault_q<=1;state_q<=FAILED;end
+          else if(shader_ready)state_q<=WAIT_SHADER;
+        end
+        WAIT_SHADER:begin
+          if(shader_fault)begin fault_q<=1;state_q<=FAILED;end
+          else if(shader_done)begin
+            if(shader_retired!=length_q)begin fault_q<=1;state_q<=FAILED;end
+            else begin
+              color_q<=shader_data[23:0];
+              last_shaded_rgb<=shader_data[23:0];
+              shader_instructions<=shader_instructions+16'(shader_retired);
+              texture_operations<=texture_operations+16'(shader_tex_count);
+              state_q<=WRITE_PIXEL;
+            end
+          end
+        end
+        WRITE_PIXEL:if(rmw_ready)state_q<=WAIT_WRITE;
+        WAIT_WRITE:if(rmw_rsp_valid)begin
+          if(rmw_rsp_error)begin fault_q<=1;state_q<=FAILED;end
+          else begin
+            shaded_pixels<=shaded_pixels+16'd1;
+            state_q<=SCAN;
+          end
+        end
+        FAILED:begin end
+        default:begin fault_q<=1;state_q<=FAILED;end
+      endcase
+    end
+  end
+  initial begin
+    if(FRAME_WIDTH<1 || FRAME_HEIGHT<1 || FRAME_WIDTH>128 ||
+       FRAME_HEIGHT>128 || PIXELS!=FRAME_WIDTH*FRAME_HEIGHT || PIXELS<2)
+      $fatal(1,"P163 framebuffer unsupported geometry");
+  end
+endmodule
