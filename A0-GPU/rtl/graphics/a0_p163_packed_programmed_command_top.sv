@@ -1,5 +1,5 @@
 `timescale 1ns/1ps
-// P165: fully writable shader program/seeds/texture, affine UV, real raster and
+// P167: programmable TEX/ALU, affine + perspective UV, real raster and
 // framebuffer behind one 77-bit research host bus (not PCIe/AXI).
 module a0_p163_packed_programmed_command_top #(
   parameter integer FRAME_WIDTH=4,FRAME_HEIGHT=4
@@ -19,13 +19,15 @@ module a0_p163_packed_programmed_command_top #(
     STATUS=17,PIXEL_RGB=18,PIXEL_DEPTH=19,SHADED_COUNT=20,
     SHADER_INSNS=21,TEXTURE_OPS=22,LAST_RGB=23,IDENT=24,
     TEX_WRITES=25,INSN_WRITES=26,SEED_WRITES=27,
-    AFFINE_MODE=28,UV0=29,UV1=30,UV2=31;
+    AFFINE_MODE=28,UV0=29,UV1=30,UV2=31,
+    INV_W0=32,INV_W1=33,INV_W2=34,PERSPECTIVE_ENABLE=35;
   localparam logic [31:0] DEVICE_ID=32'hA0163001;
 
   logic [23:0] clear_rgb_q,clear_z_q,tri_z_q;
   logic signed [15:0] x0_q,y0_q,x1_q,y1_q,x2_q,y2_q;
   logic signed [15:0] uv_u_q,uv_v_q;
-  logic affine_enable_q;
+  logic affine_enable_q,perspective_enable_q;
+  logic [15:0] inv_w0_q,inv_w1_q,inv_w2_q;
   logic signed [15:0] uv0_u_q,uv0_v_q,uv1_u_q,uv1_v_q,uv2_u_q,uv2_v_q;
   logic [1:0] depth_op_q;
   logic depth_write_q,blend_q;
@@ -80,6 +82,8 @@ module a0_p163_packed_programmed_command_top #(
     .depth_write(depth_write_q),.blend_enable(blend_q),
     .source_alpha(alpha_q),.uv_offset_u(uv_u_q),.uv_offset_v(uv_v_q),
     .affine_uv_enable(affine_enable_q),
+    .perspective_uv_enable(perspective_enable_q),
+    .inv_w0(inv_w0_q),.inv_w1(inv_w1_q),.inv_w2(inv_w2_q),
     .uv0_u(uv0_u_q),.uv0_v(uv0_v_q),
     .uv1_u(uv1_u_q),.uv1_v(uv1_v_q),
     .uv2_u(uv2_u_q),.uv2_v(uv2_v_q),
@@ -98,6 +102,8 @@ module a0_p163_packed_programmed_command_top #(
       clear_rgb_q<=0;clear_z_q<=0;tri_z_q<=0;
       x0_q<=0;y0_q<=0;x1_q<=0;y1_q<=0;x2_q<=0;y2_q<=0;
       uv_u_q<=0;uv_v_q<=0;affine_enable_q<=0;
+      perspective_enable_q<=0;
+      inv_w0_q<=0;inv_w1_q<=0;inv_w2_q<=0;
       uv0_u_q<=0;uv0_v_q<=0;uv1_u_q<=0;uv1_v_q<=0;
       uv2_u_q<=0;uv2_v_q<=0;
       depth_op_q<=1;depth_write_q<=1;blend_q<=0;alpha_q<=255;
@@ -178,6 +184,22 @@ module a0_p163_packed_programmed_command_top #(
             UV0:begin uv0_u_q<=req_wdata[15:0];uv0_v_q<=req_wdata[31:16];end
             UV1:begin uv1_u_q<=req_wdata[15:0];uv1_v_q<=req_wdata[31:16];end
             UV2:begin uv2_u_q<=req_wdata[15:0];uv2_v_q<=req_wdata[31:16];end
+            INV_W0:begin
+              if(req_wdata[31:16]!=0)rsp_error<=1;
+              else inv_w0_q<=req_wdata[15:0];
+            end
+            INV_W1:begin
+              if(req_wdata[31:16]!=0)rsp_error<=1;
+              else inv_w1_q<=req_wdata[15:0];
+            end
+            INV_W2:begin
+              if(req_wdata[31:16]!=0)rsp_error<=1;
+              else inv_w2_q<=req_wdata[15:0];
+            end
+            PERSPECTIVE_ENABLE:begin
+              if(req_wdata[31:1]!=0)rsp_error<=1;
+              else perspective_enable_q<=req_wdata[0];
+            end
             COMMAND:begin
               if(clear_launch)begin
                 clear_done_q<=0;pixel_cached_q<=0;
@@ -231,6 +253,10 @@ module a0_p163_packed_programmed_command_top #(
             UV0:rsp_rdata<={uv0_v_q,uv0_u_q};
             UV1:rsp_rdata<={uv1_v_q,uv1_u_q};
             UV2:rsp_rdata<={uv2_v_q,uv2_u_q};
+            INV_W0:rsp_rdata<={16'd0,inv_w0_q};
+            INV_W1:rsp_rdata<={16'd0,inv_w1_q};
+            INV_W2:rsp_rdata<={16'd0,inv_w2_q};
+            PERSPECTIVE_ENABLE:rsp_rdata<={31'd0,perspective_enable_q};
             default:rsp_error<=1;
           endcase
         end

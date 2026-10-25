@@ -1,5 +1,5 @@
 `timescale 1ns/1ps
-// P165: P38 raster -> optional P164 per-vertex affine UV -> P162 TEX shader
+// P167: P38 raster -> P164 affine / P166 perspective UV -> P162 TEX shader
 // -> real P144 depth/blend RGB BRAM. Sequential research renderer only.
 // All 8 shader registers are initialized per covered pixel: R0 is signed
 // screen Q8.8 texel coordinates, R1..R7 are user-defined draw seeds.
@@ -31,8 +31,9 @@ module a0_p163_programmed_fragment_core #(
   input logic depth_write,blend_enable,
   input logic [7:0] source_alpha,
   input logic signed [15:0] uv_offset_u,uv_offset_v,
-  input logic affine_uv_enable,
+  input logic affine_uv_enable,perspective_uv_enable,
   input logic signed [15:0] uv0_u,uv0_v,uv1_u,uv1_v,uv2_u,uv2_v,
+  input logic [15:0] inv_w0,inv_w1,inv_w2,
   input logic [4:0] program_length,
   input logic [2:0] output_reg,
   output logic initialized,busy,fault,
@@ -55,14 +56,24 @@ module a0_p163_programmed_fragment_core #(
   logic [31:0] seed_regs[0:7];
   logic [4:0] length_q;
   logic signed [15:0] uv_u_q,uv_v_q;
-  logic affine_mode_q;
+  logic [1:0] uv_mode_q;
+  logic [15:0] iw0_q,iw1_q,iw2_q;
   logic signed [15:0] vx0_q,vy0_q,vx1_q,vy1_q,vx2_q,vy2_q;
   logic signed [15:0] vu0_q,vv0_q,vu1_q,vv1_q,vu2_q,vv2_q;
-  logic signed [15:0] affine_u_q,affine_v_q;
+  logic signed [15:0] interpolated_u_q,interpolated_v_q;
   logic [7:0] uv_next_id_q,uv_expected_id_q,uv_wait_cycles_q;
   wire uv_req_ready,uv_rsp_valid,uv_rsp_error;
-  wire [7:0] uv_rsp_id;
+  wire aff_req_ready,aff_rsp_valid,aff_rsp_error;
+  wire pers_req_ready,pers_rsp_valid,pers_rsp_error;
+  wire [7:0] uv_rsp_id,aff_rsp_id,pers_rsp_id;
   wire signed [15:0] uv_rsp_u,uv_rsp_v;
+  wire signed [15:0] aff_rsp_u,aff_rsp_v,pers_rsp_u,pers_rsp_v;
+  assign uv_req_ready=uv_mode_q==2'd2 ? pers_req_ready : aff_req_ready;
+  assign uv_rsp_valid=uv_mode_q==2'd2 ? pers_rsp_valid : aff_rsp_valid;
+  assign uv_rsp_error=uv_mode_q==2'd2 ? pers_rsp_error : aff_rsp_error;
+  assign uv_rsp_id=uv_mode_q==2'd2 ? pers_rsp_id : aff_rsp_id;
+  assign uv_rsp_u=uv_mode_q==2'd2 ? pers_rsp_u : aff_rsp_u;
+  assign uv_rsp_v=uv_mode_q==2'd2 ? pers_rsp_v : aff_rsp_v;
   wire signed [16:0] uv_sum_u=$signed(uv_rsp_u)+$signed(uv_u_q);
   wire signed [16:0] uv_sum_v=$signed(uv_rsp_v)+$signed(uv_v_q);
   wire uv_sum_overflow=(uv_sum_u[16]!=uv_sum_u[15]) ||
@@ -86,9 +97,9 @@ module a0_p163_programmed_fragment_core #(
   wire [15:0] clear_x=16'(clear_pos_q%FRAME_WIDTH);
   wire [15:0] clear_y=16'(clear_pos_q/FRAME_WIDTH);
   wire signed [15:0] uv_pixel_x=px_q,uv_pixel_y=py_q;
-  wire signed [15:0] tex_u=affine_mode_q ? affine_u_q :
+  wire signed [15:0] tex_u=uv_mode_q!=0 ? interpolated_u_q :
     ($signed(px_q <<< 8)+uv_u_q);
-  wire signed [15:0] tex_v=affine_mode_q ? affine_v_q :
+  wire signed [15:0] tex_v=uv_mode_q!=0 ? interpolated_v_q :
     ($signed(py_q <<< 8)+uv_v_q);
   wire [31:0] shader_seed=seed_ptr_q==0 ? {tex_v,tex_u} : seed_regs[seed_ptr_q];
   wire clear_op=state_q==CLEAR_ISSUE;
@@ -110,7 +121,9 @@ module a0_p163_programmed_fragment_core #(
   assign tri_ready=rst_n && state_q==IDLE && initialized && !fault &&
     program_length>=1 && program_length<=16 &&
     !clear_valid && !host_read_valid && !config_attempt &&
-    raster_ready && rmw_ready && shader_ready;
+    raster_ready && rmw_ready && shader_ready &&
+    (!perspective_uv_enable ||
+       (inv_w0!=16'd0 && inv_w1!=16'd0 && inv_w2!=16'd0));
   assign host_read_ready=rst_n && state_q==IDLE && initialized && !fault &&
     !clear_valid && !tri_valid && !config_attempt && rmw_host_ready;
   assign host_rsp_valid=state_q==IDLE && mem_host_valid;
@@ -127,17 +140,34 @@ module a0_p163_programmed_fragment_core #(
     .pixel_ready(state_q==WAIT_WRITE && rmw_rsp_valid && !rmw_rsp_error),
     .pixel_x(raster_x),.pixel_y(raster_y),.done(raster_done)
   );
-  a0_p164_affine_vertex_uv interpolator(
+  a0_p164_affine_vertex_uv affine_interpolator(
     .clk(clk),.rst_n(rst_n),
-    .req_valid(state_q==UV_ISSUE),.req_ready(uv_req_ready),
+    .req_valid(state_q==UV_ISSUE && uv_mode_q==2'd1),
+    .req_ready(aff_req_ready),
     .x0(vx0_q),.y0(vy0_q),.x1(vx1_q),.y1(vy1_q),
     .x2(vx2_q),.y2(vy2_q),
     .u0(vu0_q),.v0(vv0_q),.u1(vu1_q),.v1(vv1_q),
     .u2(vu2_q),.v2(vv2_q),
     .pixel_x(uv_pixel_x),.pixel_y(uv_pixel_y),
-    .req_id(uv_next_id_q),.rsp_valid(uv_rsp_valid),
-    .rsp_ready(state_q==UV_WAIT),.rsp_id(uv_rsp_id),
-    .rsp_u(uv_rsp_u),.rsp_v(uv_rsp_v),.rsp_error(uv_rsp_error)
+    .req_id(uv_next_id_q),.rsp_valid(aff_rsp_valid),
+    .rsp_ready(state_q==UV_WAIT && uv_mode_q==2'd1),
+    .rsp_id(aff_rsp_id),.rsp_u(aff_rsp_u),.rsp_v(aff_rsp_v),
+    .rsp_error(aff_rsp_error)
+  );
+  a0_p166_perspective_vertex_uv perspective_interpolator(
+    .clk(clk),.rst_n(rst_n),
+    .req_valid(state_q==UV_ISSUE && uv_mode_q==2'd2),
+    .req_ready(pers_req_ready),
+    .x0(vx0_q),.y0(vy0_q),.x1(vx1_q),.y1(vy1_q),
+    .x2(vx2_q),.y2(vy2_q),
+    .u0(vu0_q),.v0(vv0_q),.u1(vu1_q),.v1(vv1_q),
+    .u2(vu2_q),.v2(vv2_q),
+    .inv_w0(iw0_q),.inv_w1(iw1_q),.inv_w2(iw2_q),
+    .pixel_x(uv_pixel_x),.pixel_y(uv_pixel_y),
+    .req_id(uv_next_id_q),.rsp_valid(pers_rsp_valid),
+    .rsp_ready(state_q==UV_WAIT && uv_mode_q==2'd2),
+    .rsp_id(pers_rsp_id),.rsp_u(pers_rsp_u),.rsp_v(pers_rsp_v),
+    .rsp_error(pers_rsp_error)
   );
   a0_p162_textured_microprogram shader(
     .clk(clk),.rst_n(rst_n),
@@ -183,10 +213,11 @@ module a0_p163_programmed_fragment_core #(
     if(!rst_n)begin
       state_q<=IDLE;initialized_q<=0;fault_q<=0;
       clear_pos_q<=0;seed_ptr_q<=0;output_reg_q<=0;length_q<=0;
-      uv_u_q<=0;uv_v_q<=0;affine_mode_q<=0;
+      uv_u_q<=0;uv_v_q<=0;uv_mode_q<=0;
+      iw0_q<=0;iw1_q<=0;iw2_q<=0;
       vx0_q<=0;vy0_q<=0;vx1_q<=0;vy1_q<=0;vx2_q<=0;vy2_q<=0;
       vu0_q<=0;vv0_q<=0;vu1_q<=0;vv1_q<=0;vu2_q<=0;vv2_q<=0;
-      affine_u_q<=0;affine_v_q<=0;
+      interpolated_u_q<=0;interpolated_v_q<=0;
       uv_next_id_q<=0;uv_expected_id_q<=0;uv_wait_cycles_q<=0;
       clear_rgb_q<=0;clear_z_q<=0;depth_q<=0;color_q<=0;
       depth_op_q<=0;depth_write_q<=0;blend_q<=0;alpha_q<=0;
@@ -221,14 +252,16 @@ module a0_p163_programmed_fragment_core #(
             depth_write_q<=depth_write;blend_q<=blend_enable;
             alpha_q<=source_alpha;
             uv_u_q<=uv_offset_u;uv_v_q<=uv_offset_v;
-            affine_mode_q<=affine_uv_enable;
+            uv_mode_q<=perspective_uv_enable ? 2'd2 :
+              (affine_uv_enable ? 2'd1 : 2'd0);
+            iw0_q<=inv_w0;iw1_q<=inv_w1;iw2_q<=inv_w2;
             vx0_q<=x0;vy0_q<=y0;vx1_q<=x1;vy1_q<=y1;
             vx2_q<=x2;vy2_q<=y2;
             vu0_q<=uv0_u;vv0_q<=uv0_v;
             vu1_q<=uv1_u;vv1_q<=uv1_v;
             vu2_q<=uv2_u;vv2_q<=uv2_v;
             uv_next_id_q<=0;uv_expected_id_q<=0;
-            affine_u_q<=0;affine_v_q<=0;
+            interpolated_u_q<=0;interpolated_v_q<=0;
             length_q<=program_length;output_reg_q<=output_reg;
             shaded_pixels<=0;shader_instructions<=0;texture_operations<=0;
             state_q<=SCAN;
@@ -246,7 +279,7 @@ module a0_p163_programmed_fragment_core #(
           else if(raster_pixel_valid)begin
             px_q<=raster_x;py_q<=raster_y;
             seed_ptr_q<=0;
-            state_q<=affine_mode_q ? UV_ISSUE : PREP_REG;
+            state_q<=uv_mode_q!=0 ? UV_ISSUE : PREP_REG;
           end
         end
         UV_ISSUE:if(uv_req_ready)begin
@@ -260,8 +293,8 @@ module a0_p163_programmed_fragment_core #(
             if(uv_rsp_error || uv_rsp_id!=uv_expected_id_q ||
                uv_sum_overflow)begin fault_q<=1;state_q<=FAILED;end
             else begin
-              affine_u_q<=uv_sum_u[15:0];
-              affine_v_q<=uv_sum_v[15:0];
+              interpolated_u_q<=uv_sum_u[15:0];
+              interpolated_v_q<=uv_sum_v[15:0];
               state_q<=PREP_REG;
             end
           end else if(uv_wait_cycles_q==8'd250)begin
