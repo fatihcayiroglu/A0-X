@@ -103,9 +103,11 @@ jobs:
       - name: Install genuine Yosys and nextpnr with bounded time
         run: |
           set -euo pipefail
-          if ! timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5; then
-            timeout 300s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
-            timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5
+          # A bad package mirror must not stall unrelated exact-head gates
+          # for 15 minutes before the fallback starts. Fail if both fail.
+          if ! timeout 180s sudo apt-get install -y -o Acquire::Retries=1 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5; then
+            timeout 120s sudo apt-get update -o Acquire::Retries=1 -o Acquire::http::Timeout=20
+            timeout 180s sudo apt-get install -y -o Acquire::Retries=1 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5
           fi
           yosys -V
           nextpnr-ecp5 --version
