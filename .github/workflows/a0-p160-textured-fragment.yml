@@ -1,0 +1,99 @@
+name: A0-X P160 real textured fragment to framebuffer
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p160_textured_fragment_trial.sv'
+      - 'A0-GPU/rtl/graphics/a0_p160_fpga_fit_top.sv'
+      - 'A0-GPU/tests/rtl/a0_p160_textured_fragment_p102_tb.sv'
+      - 'A0-GPU/docs/P160-TEXTURED-FRAGMENT-BRAM.md'
+      - '.github/workflows/a0-p160-textured-fragment.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p160_textured_fragment_trial.sv'
+      - 'A0-GPU/rtl/graphics/a0_p160_fpga_fit_top.sv'
+      - '.github/workflows/a0-p160-textured-fragment.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p160-full-frame-independent-p102-oracle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Verilog simulator
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y iverilog
+      - name: Prove P38 texture to P150 ALU and P144 full-frame RGB/depth
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P160/rtl
+          iverilog -g2012 -s a0_p160_textured_fragment_p102_tb \
+            -o EVIDENCE/P160/rtl/graphics.vvp \
+            A0-GPU/rtl/texture/a0_p156_nearest_texture.sv \
+            A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv \
+            A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv \
+            A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv \
+            A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv \
+            A0-GPU/rtl/graphics/a0_p68_depth_compare.sv \
+            A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv \
+            A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv \
+            A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv \
+            A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv \
+            A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv \
+            A0-GPU/rtl/graphics/a0_p160_textured_fragment_trial.sv \
+            A0-GPU/tests/rtl/a0_p160_textured_fragment_p102_tb.sv \
+            2>&1 | tee EVIDENCE/P160/rtl/compile.log
+          timeout 150s vvp EVIDENCE/P160/rtl/graphics.vvp | tee EVIDENCE/P160/rtl/graphics.log
+          grep -q '^P160_TEXTURED_FRAGMENT_P102_PASS draws=3 clears=4 frame_pixels=112 ' EVIDENCE/P160/rtl/graphics.log
+      - name: Preserve actual RTL logs on all outcomes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p160-textured-fragment-rtl
+          path: EVIDENCE/P160/rtl
+          if-no-files-found: warn
+  p160-real-ecp5-texture-shader-framebuffer-route:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real synthesis and FPGA routing
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y yosys nextpnr-ecp5
+      - name: Synthesize and route all P160 memory and shader components together
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P160/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/texture/a0_p156_nearest_texture.sv A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv A0-GPU/rtl/graphics/a0_p160_textured_fragment_trial.sv A0-GPU/rtl/graphics/a0_p160_fpga_fit_top.sv; hierarchy -check -top a0_p160_fpga_fit_top; synth_ecp5 -top a0_p160_fpga_fit_top -json EVIDENCE/P160/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P160/route/yosys.log
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P160/route/netlist.json \
+            --textcfg EVIDENCE/P160/route/route.config \
+            --report EVIDENCE/P160/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P160/route/nextpnr.log
+          python3 - <<'PY'
+          import collections,json
+          from pathlib import Path
+          p=Path('EVIDENCE/P160/route')
+          m=json.loads((p/'netlist.json').read_text())['modules']['a0_p160_fpga_fit_top']
+          pins=sum(len(port['bits']) for port in m['ports'].values())
+          assert pins<=365, ('ECP5 CABGA756 physical I/O limit',pins)
+          cells=collections.Counter(v['type'] for v in m['cells'].values())
+          assert cells.get('DP16KD',0)>=3, ('texture + two framebuffer banks missing',cells)
+          assert cells.get('MULT18X18D',0)>=8, ('real texture/shader DSPs missing',cells)
+          assert not any(x.startswith('$') or x.startswith('a0_') or 'LATCH' in x.upper() for x in cells),cells
+          timing=json.loads((p/'route.json').read_text())['fmax']
+          assert timing and all(x['achieved']>=5 for x in timing.values()), timing
+          print('P160_LIMITED_IO_TEXTURED_FRAGMENT_ECP5_PASS IO=%d BRAM=%d DSP=%d'%(pins,cells['DP16KD'],cells['MULT18X18D']))
+          PY
+      - name: Preserve full synthesis and route evidence on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p160-textured-fragment-route
+          path: EVIDENCE/P160/route
+          if-no-files-found: warn
