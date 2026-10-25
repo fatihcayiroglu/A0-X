@@ -1,0 +1,84 @@
+name: A0-X P158 bilinear texture real BRAM
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/texture/a0_p156_nearest_texture.sv'
+      - 'A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv'
+      - 'A0-GPU/tests/rtl/a0_p158_bilinear_texture_tb.sv'
+      - '.github/workflows/a0-p158-bilinear-texture.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv'
+      - '.github/workflows/a0-p158-bilinear-texture.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p158-actual-rtl-bilinear-oracle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Icarus Verilog
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y iverilog
+      - name: Compare real 4-tap BRAM output against independent Q8.8 oracle
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P158
+          iverilog -g2012 -s a0_p158_bilinear_texture_tb \
+            -o EVIDENCE/P158/bilinear.vvp \
+            A0-GPU/rtl/texture/a0_p156_nearest_texture.sv \
+            A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv \
+            A0-GPU/tests/rtl/a0_p158_bilinear_texture_tb.sv \
+            2>&1 | tee EVIDENCE/P158/compile.log
+          timeout 120s vvp EVIDENCE/P158/bilinear.vvp | tee EVIDENCE/P158/oracle.log
+          grep -q '^P158_BILINEAR_BRAM_ORACLE_PASS checked=' EVIDENCE/P158/oracle.log
+      - name: Preserve simulator evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p158-bilinear-rtl
+          path: EVIDENCE/P158
+          if-no-files-found: warn
+  p158-actual-ecp5-route:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual Yosys and nextpnr
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y yosys nextpnr-ecp5
+      - name: Route real ECP5 block RAM with four-tap interpolator
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P158/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/texture/a0_p156_nearest_texture.sv A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv; hierarchy -check -top a0_p158_bilinear_texture; synth_ecp5 -top a0_p158_bilinear_texture -json EVIDENCE/P158/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P158/route/yosys.log
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P158/route/netlist.json \
+            --textcfg EVIDENCE/P158/route/route.config \
+            --report EVIDENCE/P158/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P158/route/nextpnr.log
+          python3 - <<'PY'
+          import collections,json
+          from pathlib import Path
+          d=Path('EVIDENCE/P158/route')
+          module=json.loads((d/'netlist.json').read_text())['modules']['a0_p158_bilinear_texture']
+          cells=collections.Counter(cell['type'] for cell in module['cells'].values())
+          assert cells.get('DP16KD',0)>=1, cells
+          assert not any(t.startswith('$') or t.startswith('a0_') or 'LATCH' in t.upper() for t in cells), cells
+          fmax=json.loads((d/'route.json').read_text())['fmax']
+          assert fmax and all(x['achieved']>=5 for x in fmax.values()), fmax
+          print('P158_REAL_ECP5_BRAM_ROUTE_PASS DP16KD=%d'%(cells['DP16KD']))
+          PY
+      - name: Preserve synthesis and route logs even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p158-bilinear-ecp5
+          path: EVIDENCE/P158/route
+          if-no-files-found: warn
