@@ -332,6 +332,7 @@ module a0_p162_textured_microprogram_tb;
     start=1;start_length=1;texture_write_valid=1;
     texture_write_x=0;texture_write_y=0;
     texture_write_rgba=32'h12345678;
+    #1; // Settle combinational ready after same-timestep start assertion.
     if(texture_write_ready)
       $fatal(1,"P162 accepted texture write during start collision");
     @(negedge clk);start=0;texture_write_valid=0;
