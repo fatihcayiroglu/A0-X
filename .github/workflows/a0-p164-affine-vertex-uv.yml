@@ -1,0 +1,86 @@
+name: A0-X P164 affine vertex UV barycentric interpolation
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv'
+      - 'A0-GPU/tests/rtl/a0_p164_affine_vertex_uv_tb.sv'
+      - 'A0-GPU/docs/P164-AFFINE-VERTEX-UV.md'
+      - '.github/workflows/a0-p164-affine-vertex-uv.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv'
+      - '.github/workflows/a0-p164-affine-vertex-uv.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p164-independent-signed-barycentric-oracle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Icarus
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y iverilog
+      - name: Prove every signed UV result against independent 64-bit rational oracle
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P164/rtl
+          iverilog -g2012 -s a0_p164_affine_vertex_uv_tb \
+            -o EVIDENCE/P164/rtl/vertex-uv.vvp \
+            A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv \
+            A0-GPU/tests/rtl/a0_p164_affine_vertex_uv_tb.sv \
+            2>&1 | tee EVIDENCE/P164/rtl/compile.log
+          timeout 180s vvp EVIDENCE/P164/rtl/vertex-uv.vvp | tee EVIDENCE/P164/rtl/result.log
+          grep -q '^P164_AFFINE_VERTEX_UV_PASS checks=1010 ' EVIDENCE/P164/rtl/result.log
+          grep -q 'reset_abort=1 serial_divisions_per_sample=2' EVIDENCE/P164/rtl/result.log
+      - name: Preserve real RTL evidence on failure as well
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p164-signed-interpolation-rtl
+          path: EVIDENCE/P164/rtl
+          if-no-files-found: warn
+  p164-real-ecp5-routed-interpolator:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real ECP5 synthesis and PnR
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y yosys nextpnr-ecp5
+      - name: Map and fully route real 279-IO signed attribute pipeline
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P164/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv; hierarchy -check -top a0_p164_affine_vertex_uv; synth_ecp5 -top a0_p164_affine_vertex_uv -json EVIDENCE/P164/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P164/route/yosys.log
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P164/route/netlist.json \
+            --textcfg EVIDENCE/P164/route/route.config \
+            --report EVIDENCE/P164/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P164/route/nextpnr.log
+          python3 - <<'PY'
+          import collections,json
+          from pathlib import Path
+          p=Path('EVIDENCE/P164/route')
+          m=json.loads((p/'netlist.json').read_text())['modules']['a0_p164_affine_vertex_uv']
+          pins=sum(len(v['bits']) for v in m['ports'].values())
+          c=collections.Counter(v['type'] for v in m['cells'].values())
+          assert pins==279,('signed UV interface unexpectedly changed',pins)
+          assert c.get('MULT18X18D',0)>=6,('real barycentric DSP arithmetic missing',c)
+          assert not any(k.startswith('$') or k.startswith('a0_') or 'LATCH' in k.upper() for k in c),c
+          fmax=json.loads((p/'route.json').read_text())['fmax']
+          assert fmax and all(v['achieved']>=5 for v in fmax.values()),fmax
+          print('P164_SIGNED_AFFINE_UV_ECP5_PASS pins=%d DSP=%d'%(pins,c['MULT18X18D']))
+          PY
+      - name: Preserve real routed FPGA netlist, resource and timing evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p164-affine-uv-ecp5-route
+          path: EVIDENCE/P164/route
+          if-no-files-found: warn
