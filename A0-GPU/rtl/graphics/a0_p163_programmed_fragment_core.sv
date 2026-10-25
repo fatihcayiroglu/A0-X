@@ -1,5 +1,5 @@
 `timescale 1ns/1ps
-// P163: actual raster P38 -> per-fragment P162 shader program (with TEX)
+// P165: P38 raster -> optional P164 per-vertex affine UV -> P162 TEX shader
 // -> real P144 depth/blend RGB BRAM. Sequential research renderer only.
 // All 8 shader registers are initialized per covered pixel: R0 is signed
 // screen Q8.8 texel coordinates, R1..R7 are user-defined draw seeds.
@@ -31,6 +31,8 @@ module a0_p163_programmed_fragment_core #(
   input logic depth_write,blend_enable,
   input logic [7:0] source_alpha,
   input logic signed [15:0] uv_offset_u,uv_offset_v,
+  input logic affine_uv_enable,
+  input logic signed [15:0] uv0_u,uv0_v,uv1_u,uv1_v,uv2_u,uv2_v,
   input logic [4:0] program_length,
   input logic [2:0] output_reg,
   output logic initialized,busy,fault,
@@ -44,7 +46,8 @@ module a0_p163_programmed_fragment_core #(
 );
   localparam logic [3:0]
     IDLE=0,CLEAR_ISSUE=1,CLEAR_WAIT=2,SCAN=3,PREP_REG=4,
-    LAUNCH_SHADER=5,WAIT_SHADER=6,WRITE_PIXEL=7,WAIT_WRITE=8,FAILED=9;
+    LAUNCH_SHADER=5,WAIT_SHADER=6,WRITE_PIXEL=7,WAIT_WRITE=8,FAILED=9,
+    UV_ISSUE=10,UV_WAIT=11;
   logic [3:0] state_q;
   logic initialized_q,fault_q;
   logic [$clog2(PIXELS+1)-1:0] clear_pos_q;
@@ -52,6 +55,18 @@ module a0_p163_programmed_fragment_core #(
   logic [31:0] seed_regs[0:7];
   logic [4:0] length_q;
   logic signed [15:0] uv_u_q,uv_v_q;
+  logic affine_mode_q;
+  logic signed [15:0] vx0_q,vy0_q,vx1_q,vy1_q,vx2_q,vy2_q;
+  logic signed [15:0] vu0_q,vv0_q,vu1_q,vv1_q,vu2_q,vv2_q;
+  logic signed [15:0] affine_u_q,affine_v_q;
+  logic [7:0] uv_next_id_q,uv_expected_id_q,uv_wait_cycles_q;
+  wire uv_req_ready,uv_rsp_valid,uv_rsp_error;
+  wire [7:0] uv_rsp_id;
+  wire signed [15:0] uv_rsp_u,uv_rsp_v;
+  wire signed [16:0] uv_sum_u=$signed(uv_rsp_u)+$signed(uv_u_q);
+  wire signed [16:0] uv_sum_v=$signed(uv_rsp_v)+$signed(uv_v_q);
+  wire uv_sum_overflow=(uv_sum_u[16]!=uv_sum_u[15]) ||
+                        (uv_sum_v[16]!=uv_sum_v[15]);
   logic [23:0] clear_rgb_q,clear_z_q,depth_q,color_q;
   logic [1:0] depth_op_q;
   logic depth_write_q,blend_q;
@@ -70,8 +85,10 @@ module a0_p163_programmed_fragment_core #(
   wire [23:0] mem_host_color,mem_host_depth;
   wire [15:0] clear_x=16'(clear_pos_q%FRAME_WIDTH);
   wire [15:0] clear_y=16'(clear_pos_q/FRAME_WIDTH);
-  wire signed [15:0] tex_u=$signed(px_q <<< 8)+uv_u_q;
-  wire signed [15:0] tex_v=$signed(py_q <<< 8)+uv_v_q;
+  wire signed [15:0] tex_u=affine_mode_q ? affine_u_q :
+    ($signed(px_q <<< 8)+uv_u_q);
+  wire signed [15:0] tex_v=affine_mode_q ? affine_v_q :
+    ($signed(py_q <<< 8)+uv_v_q);
   wire [31:0] shader_seed=seed_ptr_q==0 ? {tex_v,tex_u} : seed_regs[seed_ptr_q];
   wire clear_op=state_q==CLEAR_ISSUE;
   wire pixel_op=state_q==WRITE_PIXEL;
@@ -108,6 +125,18 @@ module a0_p163_programmed_fragment_core #(
     .pixel_valid(raster_pixel_valid),
     .pixel_ready(state_q==WAIT_WRITE && rmw_rsp_valid && !rmw_rsp_error),
     .pixel_x(raster_x),.pixel_y(raster_y),.done(raster_done)
+  );
+  a0_p164_affine_vertex_uv interpolator(
+    .clk(clk),.rst_n(rst_n),
+    .req_valid(state_q==UV_ISSUE),.req_ready(uv_req_ready),
+    .x0(vx0_q),.y0(vy0_q),.x1(vx1_q),.y1(vy1_q),
+    .x2(vx2_q),.y2(vy2_q),
+    .u0(vu0_q),.v0(vv0_q),.u1(vu1_q),.v1(vv1_q),
+    .u2(vu2_q),.v2(vv2_q),
+    .pixel_x($signed(px_q)),.pixel_y($signed(py_q)),
+    .req_id(uv_next_id_q),.rsp_valid(uv_rsp_valid),
+    .rsp_ready(state_q==UV_WAIT),.rsp_id(uv_rsp_id),
+    .rsp_u(uv_rsp_u),.rsp_v(uv_rsp_v),.rsp_error(uv_rsp_error)
   );
   a0_p162_textured_microprogram shader(
     .clk(clk),.rst_n(rst_n),
@@ -153,7 +182,11 @@ module a0_p163_programmed_fragment_core #(
     if(!rst_n)begin
       state_q<=IDLE;initialized_q<=0;fault_q<=0;
       clear_pos_q<=0;seed_ptr_q<=0;output_reg_q<=0;length_q<=0;
-      uv_u_q<=0;uv_v_q<=0;
+      uv_u_q<=0;uv_v_q<=0;affine_mode_q<=0;
+      vx0_q<=0;vy0_q<=0;vx1_q<=0;vy1_q<=0;vx2_q<=0;vy2_q<=0;
+      vu0_q<=0;vv0_q<=0;vu1_q<=0;vv1_q<=0;vu2_q<=0;vv2_q<=0;
+      affine_u_q<=0;affine_v_q<=0;
+      uv_next_id_q<=0;uv_expected_id_q<=0;uv_wait_cycles_q<=0;
       clear_rgb_q<=0;clear_z_q<=0;depth_q<=0;color_q<=0;
       depth_op_q<=0;depth_write_q<=0;blend_q<=0;alpha_q<=0;
       px_q<=0;py_q<=0;
@@ -187,6 +220,14 @@ module a0_p163_programmed_fragment_core #(
             depth_write_q<=depth_write;blend_q<=blend_enable;
             alpha_q<=source_alpha;
             uv_u_q<=uv_offset_u;uv_v_q<=uv_offset_v;
+            affine_mode_q<=affine_uv_enable;
+            vx0_q<=x0;vy0_q<=y0;vx1_q<=x1;vy1_q<=y1;
+            vx2_q<=x2;vy2_q<=y2;
+            vu0_q<=uv0_u;vv0_q<=uv0_v;
+            vu1_q<=uv1_u;vv1_q<=uv1_v;
+            vu2_q<=uv2_u;vv2_q<=uv2_v;
+            uv_next_id_q<=0;uv_expected_id_q<=0;
+            affine_u_q<=0;affine_v_q<=0;
             length_q<=program_length;output_reg_q<=output_reg;
             shaded_pixels<=0;shader_instructions<=0;texture_operations<=0;
             state_q<=SCAN;
@@ -203,8 +244,28 @@ module a0_p163_programmed_fragment_core #(
           if(raster_done)begin tri_done<=1;state_q<=IDLE;end
           else if(raster_pixel_valid)begin
             px_q<=raster_x;py_q<=raster_y;
-            seed_ptr_q<=0;state_q<=PREP_REG;
+            seed_ptr_q<=0;
+            state_q<=affine_mode_q ? UV_ISSUE : PREP_REG;
           end
+        end
+        UV_ISSUE:if(uv_req_ready)begin
+          uv_expected_id_q<=uv_next_id_q;
+          uv_next_id_q<=uv_next_id_q+8'd1;
+          uv_wait_cycles_q<=0;
+          state_q<=UV_WAIT;
+        end
+        UV_WAIT:begin
+          if(uv_rsp_valid)begin
+            if(uv_rsp_error || uv_rsp_id!=uv_expected_id_q ||
+               uv_sum_overflow)begin fault_q<=1;state_q<=FAILED;end
+            else begin
+              affine_u_q<=uv_sum_u[15:0];
+              affine_v_q<=uv_sum_v[15:0];
+              state_q<=PREP_REG;
+            end
+          end else if(uv_wait_cycles_q==8'd250)begin
+            fault_q<=1;state_q<=FAILED;
+          end else uv_wait_cycles_q<=uv_wait_cycles_q+8'd1;
         end
         PREP_REG:begin
           if(shader_fault)begin fault_q<=1;state_q<=FAILED;end

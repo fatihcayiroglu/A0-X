@@ -1,5 +1,5 @@
 `timescale 1ns/1ps
-// P163: fully writable shader program/seeds/texture, real raster and
+// P165: fully writable shader program/seeds/texture, affine UV, real raster and
 // framebuffer behind one 77-bit research host bus (not PCIe/AXI).
 module a0_p163_packed_programmed_command_top #(
   parameter integer FRAME_WIDTH=4,FRAME_HEIGHT=4
@@ -18,12 +18,15 @@ module a0_p163_packed_programmed_command_top #(
     TEXTURE_XY=13,TEXTURE_RGBA=14,READ_XY=15,COMMAND=16,
     STATUS=17,PIXEL_RGB=18,PIXEL_DEPTH=19,SHADED_COUNT=20,
     SHADER_INSNS=21,TEXTURE_OPS=22,LAST_RGB=23,IDENT=24,
-    TEX_WRITES=25,INSN_WRITES=26,SEED_WRITES=27;
+    TEX_WRITES=25,INSN_WRITES=26,SEED_WRITES=27,
+    AFFINE_MODE=28,UV0=29,UV1=30,UV2=31;
   localparam logic [31:0] DEVICE_ID=32'hA0163001;
 
   logic [23:0] clear_rgb_q,clear_z_q,tri_z_q;
   logic signed [15:0] x0_q,y0_q,x1_q,y1_q,x2_q,y2_q;
   logic signed [15:0] uv_u_q,uv_v_q;
+  logic affine_enable_q;
+  logic signed [15:0] uv0_u_q,uv0_v_q,uv1_u_q,uv1_v_q,uv2_u_q,uv2_v_q;
   logic [1:0] depth_op_q;
   logic depth_write_q,blend_q;
   logic [7:0] alpha_q;
@@ -76,6 +79,10 @@ module a0_p163_packed_programmed_command_top #(
     .tri_depth(tri_z_q),.depth_compare_op(depth_op_q),
     .depth_write(depth_write_q),.blend_enable(blend_q),
     .source_alpha(alpha_q),.uv_offset_u(uv_u_q),.uv_offset_v(uv_v_q),
+    .affine_uv_enable(affine_enable_q),
+    .uv0_u(uv0_u_q),.uv0_v(uv0_v_q),
+    .uv1_u(uv1_u_q),.uv1_v(uv1_v_q),
+    .uv2_u(uv2_u_q),.uv2_v(uv2_v_q),
     .program_length(shader_length_q),.output_reg(shader_output_q),
     .initialized(core_initialized),.busy(core_busy),.fault(core_fault),
     .shaded_pixels(shaded_count),.shader_instructions(shader_insns),
@@ -90,7 +97,9 @@ module a0_p163_packed_programmed_command_top #(
     if(!rst_n)begin
       clear_rgb_q<=0;clear_z_q<=0;tri_z_q<=0;
       x0_q<=0;y0_q<=0;x1_q<=0;y1_q<=0;x2_q<=0;y2_q<=0;
-      uv_u_q<=0;uv_v_q<=0;
+      uv_u_q<=0;uv_v_q<=0;affine_enable_q<=0;
+      uv0_u_q<=0;uv0_v_q<=0;uv1_u_q<=0;uv1_v_q<=0;
+      uv2_u_q<=0;uv2_v_q<=0;
       depth_op_q<=1;depth_write_q<=1;blend_q<=0;alpha_q<=255;
       shader_length_q<=0;shader_output_q<=2;
       seed_index_q<=1;insn_index_q<=0;tex_x_q<=0;tex_y_q<=0;
@@ -162,6 +171,13 @@ module a0_p163_packed_programmed_command_top #(
               end else rsp_error<=1;
             end
             READ_XY:begin read_x_q<=req_wdata[15:0];read_y_q<=req_wdata[31:16];end
+            AFFINE_MODE:begin
+              if(req_wdata[31:1]!=0)rsp_error<=1;
+              else affine_enable_q<=req_wdata[0];
+            end
+            UV0:begin uv0_u_q<=req_wdata[15:0];uv0_v_q<=req_wdata[31:16];end
+            UV1:begin uv1_u_q<=req_wdata[15:0];uv1_v_q<=req_wdata[31:16];end
+            UV2:begin uv2_u_q<=req_wdata[15:0];uv2_v_q<=req_wdata[31:16];end
             COMMAND:begin
               if(clear_launch)begin
                 clear_done_q<=0;pixel_cached_q<=0;
@@ -211,6 +227,10 @@ module a0_p163_packed_programmed_command_top #(
             TEX_WRITES:rsp_rdata<={16'd0,tex_writes_q};
             INSN_WRITES:rsp_rdata<={16'd0,insn_writes_q};
             SEED_WRITES:rsp_rdata<={16'd0,seed_writes_q};
+            AFFINE_MODE:rsp_rdata<={31'd0,affine_enable_q};
+            UV0:rsp_rdata<={uv0_v_q,uv0_u_q};
+            UV1:rsp_rdata<={uv1_v_q,uv1_u_q};
+            UV2:rsp_rdata<={uv2_v_q,uv2_u_q};
             default:rsp_error<=1;
           endcase
         end
