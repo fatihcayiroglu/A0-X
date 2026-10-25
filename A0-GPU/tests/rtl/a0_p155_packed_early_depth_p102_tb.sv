@@ -148,7 +148,7 @@ module a0_p155_packed_early_depth_p102_tb #(
   initial begin
     repeat(4)@(negedge clk);rst_n=1;
     rd(15,out);
-    if(out!==32'hA0153001)$fatal(1,"P153 wrong shader bus device ID");
+    if(out!==32'hA0155001)$fatal(1,"P153 wrong shader bus device ID");
     expect_error(1,9,32'h40); // MODE bit6 stays reserved; bit5 now enables early depth
     expect_error(1,18,32'hff000000); // malformed instruction must NOT write
     expect_error(1,19,0); // invalid program length
