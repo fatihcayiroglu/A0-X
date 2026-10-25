@@ -6,6 +6,9 @@
 // V = sum(edge_i * inverseW_i * V_i) / sum(edge_i * inverseW_i).
 // There is NO intermediate rounding of U/W or 1/W. Two serialized
 // 80-cycle restoring divisions implement exact truncation toward zero.
+// P168: reciprocal weights (1,1,1) use exactly 64 quotient bits.
+// Loading the 64-bit affine numerator into the upper 64 of the 80-bit
+// shift register preserves the original P164 result and halves no accuracy.
 module a0_p166_perspective_vertex_uv(
   input logic clk,rst_n,
   input logic req_valid,
@@ -78,7 +81,11 @@ module a0_p166_perspective_vertex_uv(
   logic [79:0] divisor_q,dividend_q,quotient_q,second_dividend_q;
   logic [80:0] remainder_q;
   logic [6:0] step_q;
-  logic neg_u_q,neg_v_q;
+  logic affine_short_q,neg_u_q,neg_v_q;
+  // All weights equal one are algebraically identical to the affine
+  // numerator / signed triangle area. That numerator fits signed 64-bit.
+  wire affine_short=(inv_w0==16'd1 && inv_w1==16'd1 &&
+                     inv_w2==16'd1);
   wire [80:0] trial_remainder={remainder_q[79:0],dividend_q[79]};
   wire subtract_valid=trial_remainder >= {1'b0,divisor_q};
   wire [80:0] next_remainder=subtract_valid ?
@@ -98,7 +105,7 @@ module a0_p166_perspective_vertex_uv(
     if(!rst_n)begin
       state_q<=IDLE;divisor_q<=0;dividend_q<=0;
       quotient_q<=0;second_dividend_q<=0;remainder_q<=0;
-      step_q<=0;neg_u_q<=0;neg_v_q<=0;
+      step_q<=0;affine_short_q<=0;neg_u_q<=0;neg_v_q<=0;
       rsp_id<=0;rsp_u<=0;rsp_v<=0;rsp_error<=0;
     end else begin
       case(state_q)
@@ -110,7 +117,12 @@ module a0_p166_perspective_vertex_uv(
             state_q<=OUTPUT;
           end else begin
             divisor_q<=divisor_abs;
-            dividend_q<=u_abs;second_dividend_q<=v_abs;
+            // The 64-bit stream is placed at the MSB end so the shared
+            // 80-bit subtract/compare datapath needs only 64 iterations.
+            dividend_q<=affine_short ? {u_abs[63:0],16'd0} : u_abs;
+            second_dividend_q<=affine_short ?
+              {v_abs[63:0],16'd0} : v_abs;
+            affine_short_q<=affine_short;
             neg_u_q<=u_numerator[79] ^ divisor_signed[79];
             neg_v_q<=v_numerator[79] ^ divisor_signed[79];
             quotient_q<=0;remainder_q<=0;step_q<=0;
@@ -122,7 +134,7 @@ module a0_p166_perspective_vertex_uv(
           quotient_q<=next_quotient;
           remainder_q<=next_remainder;
           step_q<=step_q+7'd1;
-          if(step_q==7'd79)begin
+          if(step_q==(affine_short_q ? 7'd63 : 7'd79))begin
             if(magnitude_overflow)begin
               rsp_u<=0;rsp_v<=0;rsp_error<=1;
               state_q<=OUTPUT;

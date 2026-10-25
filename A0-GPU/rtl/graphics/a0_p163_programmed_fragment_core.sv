@@ -1,5 +1,5 @@
 `timescale 1ns/1ps
-// P167: P38 raster -> P164 affine / P166 perspective UV -> P162 TEX shader
+// P168: P38 raster -> single shared P166 fast-affine/perspective UV -> P162 TEX shader
 // -> real P144 depth/blend RGB BRAM. Sequential research renderer only.
 // All 8 shader registers are initialized per covered pixel: R0 is signed
 // screen Q8.8 texel coordinates, R1..R7 are user-defined draw seeds.
@@ -63,17 +63,11 @@ module a0_p163_programmed_fragment_core #(
   logic signed [15:0] interpolated_u_q,interpolated_v_q;
   logic [7:0] uv_next_id_q,uv_expected_id_q,uv_wait_cycles_q;
   wire uv_req_ready,uv_rsp_valid,uv_rsp_error;
-  wire aff_req_ready,aff_rsp_valid,aff_rsp_error;
-  wire pers_req_ready,pers_rsp_valid,pers_rsp_error;
-  wire [7:0] uv_rsp_id,aff_rsp_id,pers_rsp_id;
+  // One hardware engine serves both interpolation modes. The all-one
+  // inverse-W values select the exact 64-cycle-per-coordinate affine path;
+  // perspective retains its signed 80-cycle path and immutable draw snapshot.
+  wire [7:0] uv_rsp_id;
   wire signed [15:0] uv_rsp_u,uv_rsp_v;
-  wire signed [15:0] aff_rsp_u,aff_rsp_v,pers_rsp_u,pers_rsp_v;
-  assign uv_req_ready=uv_mode_q==2'd2 ? pers_req_ready : aff_req_ready;
-  assign uv_rsp_valid=uv_mode_q==2'd2 ? pers_rsp_valid : aff_rsp_valid;
-  assign uv_rsp_error=uv_mode_q==2'd2 ? pers_rsp_error : aff_rsp_error;
-  assign uv_rsp_id=uv_mode_q==2'd2 ? pers_rsp_id : aff_rsp_id;
-  assign uv_rsp_u=uv_mode_q==2'd2 ? pers_rsp_u : aff_rsp_u;
-  assign uv_rsp_v=uv_mode_q==2'd2 ? pers_rsp_v : aff_rsp_v;
   wire signed [16:0] uv_sum_u=$signed(uv_rsp_u)+$signed(uv_u_q);
   wire signed [16:0] uv_sum_v=$signed(uv_rsp_v)+$signed(uv_v_q);
   wire uv_sum_overflow=(uv_sum_u[16]!=uv_sum_u[15]) ||
@@ -140,34 +134,22 @@ module a0_p163_programmed_fragment_core #(
     .pixel_ready(state_q==WAIT_WRITE && rmw_rsp_valid && !rmw_rsp_error),
     .pixel_x(raster_x),.pixel_y(raster_y),.done(raster_done)
   );
-  a0_p164_affine_vertex_uv affine_interpolator(
+  a0_p166_perspective_vertex_uv shared_uv_interpolator(
     .clk(clk),.rst_n(rst_n),
-    .req_valid(state_q==UV_ISSUE && uv_mode_q==2'd1),
-    .req_ready(aff_req_ready),
+    .req_valid(state_q==UV_ISSUE && uv_mode_q!=2'd0),
+    .req_ready(uv_req_ready),
     .x0(vx0_q),.y0(vy0_q),.x1(vx1_q),.y1(vy1_q),
     .x2(vx2_q),.y2(vy2_q),
     .u0(vu0_q),.v0(vv0_q),.u1(vu1_q),.v1(vv1_q),
     .u2(vu2_q),.v2(vv2_q),
+    .inv_w0(uv_mode_q==2'd1 ? 16'd1 : iw0_q),
+    .inv_w1(uv_mode_q==2'd1 ? 16'd1 : iw1_q),
+    .inv_w2(uv_mode_q==2'd1 ? 16'd1 : iw2_q),
     .pixel_x(uv_pixel_x),.pixel_y(uv_pixel_y),
-    .req_id(uv_next_id_q),.rsp_valid(aff_rsp_valid),
-    .rsp_ready(state_q==UV_WAIT && uv_mode_q==2'd1),
-    .rsp_id(aff_rsp_id),.rsp_u(aff_rsp_u),.rsp_v(aff_rsp_v),
-    .rsp_error(aff_rsp_error)
-  );
-  a0_p166_perspective_vertex_uv perspective_interpolator(
-    .clk(clk),.rst_n(rst_n),
-    .req_valid(state_q==UV_ISSUE && uv_mode_q==2'd2),
-    .req_ready(pers_req_ready),
-    .x0(vx0_q),.y0(vy0_q),.x1(vx1_q),.y1(vy1_q),
-    .x2(vx2_q),.y2(vy2_q),
-    .u0(vu0_q),.v0(vv0_q),.u1(vu1_q),.v1(vv1_q),
-    .u2(vu2_q),.v2(vv2_q),
-    .inv_w0(iw0_q),.inv_w1(iw1_q),.inv_w2(iw2_q),
-    .pixel_x(uv_pixel_x),.pixel_y(uv_pixel_y),
-    .req_id(uv_next_id_q),.rsp_valid(pers_rsp_valid),
-    .rsp_ready(state_q==UV_WAIT && uv_mode_q==2'd2),
-    .rsp_id(pers_rsp_id),.rsp_u(pers_rsp_u),.rsp_v(pers_rsp_v),
-    .rsp_error(pers_rsp_error)
+    .req_id(uv_next_id_q),.rsp_valid(uv_rsp_valid),
+    .rsp_ready(state_q==UV_WAIT),
+    .rsp_id(uv_rsp_id),.rsp_u(uv_rsp_u),.rsp_v(uv_rsp_v),
+    .rsp_error(uv_rsp_error)
   );
   a0_p162_textured_microprogram shader(
     .clk(clk),.rst_n(rst_n),
