@@ -34,10 +34,10 @@ module a0_p166_perspective_vertex_uv_tb;
   // Independent rational arithmetic; every ordinary fixture is chosen
   // small enough that its complete weighted numerator fits signed 64 bits.
   // The extreme fixture below instead uses an exact constant-UV invariant.
-  function automatic longint signed cross(
+  function automatic longint signed scalar_cross(
     input longint signed ax,ay,bx,by,cx,cy
   );
-    cross=(bx-ax)*(cy-ay)-(by-ay)*(cx-ax);
+    scalar_cross=(bx-ax)*(cy-ay)-(by-ay)*(cx-ax);
   endfunction
   task automatic oracle(
     output integer expected_error,
@@ -51,11 +51,11 @@ module a0_p166_perspective_vertex_uv_tb;
       end else begin
         px2=2*longint'(pixel_x)+1;
         py2=2*longint'(pixel_y)+1;
-        a0=cross(longint'(x1)*2,longint'(y1)*2,
+        a0=scalar_cross(longint'(x1)*2,longint'(y1)*2,
                  longint'(x2)*2,longint'(y2)*2,px2,py2);
-        a1=cross(longint'(x2)*2,longint'(y2)*2,
+        a1=scalar_cross(longint'(x2)*2,longint'(y2)*2,
                  longint'(x0)*2,longint'(y0)*2,px2,py2);
-        a2=cross(longint'(x0)*2,longint'(y0)*2,
+        a2=scalar_cross(longint'(x0)*2,longint'(y0)*2,
                  longint'(x1)*2,longint'(y1)*2,px2,py2);
         den=a0*longint'(inv_w0)+a1*longint'(inv_w1)+
             a2*longint'(inv_w2);
