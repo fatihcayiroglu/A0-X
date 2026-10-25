@@ -125,7 +125,8 @@ module a0_p144_dual_depth_blend_tb #(
       end
       @(posedge clk);#2;
       got_response=rsp_valid;
-      // Clear or invalid packet completes in one cycle; valid RMW in two.
+      // Clear/invalid completes at acceptance; valid RMW has three
+      // strictly ordered edges: read, snapshot compare/blend, writeback.
       if(got_response !== (is_clear || !good))
         $fatal(1,"P144 wrong initial response beat clear=%b good=%b got=%b",
            is_clear,good,got_response);
@@ -133,8 +134,11 @@ module a0_p144_dual_depth_blend_tb #(
       if(!got_response) begin
         if(op_ready) $fatal(1,"P144 RMW must hold op_ready=0 until commit");
         @(posedge clk);#2;
+        if(rsp_valid || op_ready)
+          $fatal(1,"P171 depth/blend decision beat must not retire early");
+        @(posedge clk);#2;
         if(!rsp_valid)
-          $fatal(1,"P144 RMW missing second beat completion");
+          $fatal(1,"P171 RMW missing third beat completion");
       end
       if(!rsp_valid || rsp_error !== !good ||
          rsp_pixel_written !== expected_writes)
@@ -235,7 +239,7 @@ module a0_p144_dual_depth_blend_tb #(
     end
     scan_frame();
     // Same-cycle host read and dual RMW request: op wins, host must
-    // remain unacknowledged during both read and write beats. Invalid
+    // remain unacknowledged through read, decision and write beats. Invalid
     // depth mode makes it a non-destructive protocol probe.
     @(negedge clk);
     if(!op_ready) $fatal(1,"P144 priority probe must start idle");
@@ -254,6 +258,9 @@ module a0_p144_dual_depth_blend_tb #(
     if(host_read_ready!==0 || host_rsp_valid)
       $fatal(1,"P144 host leaked through active RMW packet");
     host_priority_stalls=host_priority_stalls+1;
+    @(posedge clk);#2;
+    if(rsp_valid || op_ready || host_rsp_valid)
+      $fatal(1,"P171 host priority leaked during decision beat");
     @(posedge clk);#2;
     if(!rsp_valid || rsp_error || rsp_pixel_written!==2'b00 ||
        host_rsp_valid)

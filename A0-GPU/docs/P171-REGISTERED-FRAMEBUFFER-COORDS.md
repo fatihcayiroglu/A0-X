@@ -17,8 +17,24 @@ P163 now holds `fb_x_q/fb_y_q` as request coordinates:
 
 Failures still fail closed, and register contents cannot be changed by new live draw/configuration inputs after acceptance.
 
+## Read/compare/writeback register boundary
+
+The first routed candidate improved from 37.64 to **38.12 MHz**, but failed
+the unchanged >=40 MHz acceptance gate. The revised critical path began
+at BRAM read data, traversed dynamic depth/blend decisions and bank-write
+validity metadata, then terminated at a validity flip-flop.
+
+P144 therefore now has three sequential beats for a valid RMW packet:
+BRAM read, registered depth/blend decision and conditional BRAM commit.
+It snapshots the accepted request as before, and invalid/missing read
+responses still fail closed without partial writes. A valid non-clear
+RMW costs **one additional clock**; clears and invalid packets retain
+their immediate one-cycle completion. Both Fmax and end-to-end pixel
+latency must be reported; better MHz alone is not proof of faster frames.
+
 ## Required evidence
 
+- Full independent P144 two-lane RGB/depth oracle on 4x4, 7x5, 8x8 and 32x32 framebuffers, including exact three-beat retirement and zero premature host priority.
 - Real Icarus P163 oracle against independent P102 reference: five tested clear/frame phases with 80 full-frame pixels, malformed texture fail-closed evidence.
 - Existing P165 affine and P167 perspective P102 framebuffer oracles on changed P163 source, including snapshot and inverse-W/overflow faults.
 - Existing P163/P165/P167 full 77-IO place-route resource consistency gates.
