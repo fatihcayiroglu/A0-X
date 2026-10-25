@@ -24,7 +24,9 @@ jobs:
       - name: Install real Yosys and simulation toolchain
         run: |
           set -euo pipefail
-          sudo apt-get update
+          # ubuntu-24.04 runners ship package indexes; avoid an unrelated
+          # mirror refresh hanging the exact-head synthesis regression.
+          # A missing tool or package still fails this strict step.
           sudo apt-get install -y yosys iverilog
           yosys -V
           iverilog -V | head -n 1
