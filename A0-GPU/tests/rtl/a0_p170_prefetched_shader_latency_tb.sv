@@ -18,6 +18,7 @@ module a0_p170_prefetched_shader_latency_tb;
     .clk(clk),.rst_n(rst_n),
     .reg_write_valid(reg_write_valid),.reg_write_index(reg_write_index),
     .reg_write_data(reg_write_data),.reg_read_index(reg_read_index),
+    .reg_read_data(reg_read_data),
     .insn_write_valid(insn_write_valid),
     .insn_write_index(insn_write_index),
     .insn_write_data(insn_write_data),
