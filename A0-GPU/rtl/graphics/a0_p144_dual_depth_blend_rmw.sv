@@ -1,6 +1,7 @@
 `timescale 1ns/1ps
-// P144: actual TWO-LANE depth-test + RGB-alpha-blend BRAM RMW micro-engine.
-// Explicit two-beat issue: (1) both reads, (2) both conditional writes.
+// P171: registered read/decision/commit path for two-lane depth/blend RMW.
+// Three beats: (1) both BRAM reads, (2) snapshot compare/blend results,
+// (3) both conditional writes. This cuts the BRAM-to-writeback clock path.
 // A packet must have in-bounds, DIFFERENT-bank valid addresses, otherwise
 // it fails atomically with no writes. Inactive lanes consume no bank.
 // Accepted host reads use lane0 ONLY while idle and are tagged separately.
@@ -29,7 +30,9 @@ module a0_p144_dual_depth_blend_rmw #(
   output logic host_rsp_valid,host_rsp_error,
   output logic [23:0] host_rsp_color,host_rsp_depth
 );
-  logic busy_q;
+  logic busy_q,commit_q;
+  logic [1:0] commit_mask_q;
+  logic [47:0] commit0_data_q,commit1_data_q;
   logic [15:0] x0_q,y0_q,x1_q,y1_q;
   logic [1:0] mask_q,depth_op_q;
   logic [23:0] color_q,depth_q;
@@ -91,13 +94,17 @@ module a0_p144_dual_depth_blend_rmw #(
     mem0_wdata=0;mem1_wdata=0;
 
     if(busy_q) begin
-      // Commit stage. No next packet may enter while read data is live.
-      mem0_req_valid=read_beat_valid && mask_q[0] && depth0_pass;
-      mem1_req_valid=read_beat_valid && mask_q[1] && depth1_pass;
-      mem0_write=1'b1;mem1_write=1'b1;
-      mem0_x=x0_q;mem0_y=y0_q;mem1_x=x1_q;mem1_y=y1_q;
-      mem0_wdata={blend0,depth_write_q ? depth_q : mem0_rsp_data[23:0]};
-      mem1_wdata={blend1,depth_write_q ? depth_q : mem1_rsp_data[23:0]};
+      // Read response is consumed in the decision beat, NOT fed directly
+      // through the depth/blend network to the BRAM write address/data.
+      // The commit beat drives a bounded, fully registered payload.
+      if(commit_q) begin
+        mem0_req_valid=commit_mask_q[0];
+        mem1_req_valid=commit_mask_q[1];
+        mem0_write=1'b1;mem1_write=1'b1;
+        mem0_x=x0_q;mem0_y=y0_q;mem1_x=x1_q;mem1_y=y1_q;
+        mem0_wdata=commit0_data_q;
+        mem1_wdata=commit1_data_q;
+      end
     end else if(good_fire) begin
       // Clear is a direct, no-read write. Other modes take concurrent
       // registered reads, followed by the write beat on the next clock.
@@ -135,7 +142,8 @@ module a0_p144_dual_depth_blend_rmw #(
 
   always_ff @(posedge clk) begin
     if(!rst_n) begin
-      busy_q<=1'b0;
+      busy_q<=1'b0;commit_q<=1'b0;
+      commit_mask_q<=0;commit0_data_q<=0;commit1_data_q<=0;
       mask_q<=0;
       x0_q<=0;y0_q<=0;x1_q<=0;y1_q<=0;
       color_q<=0;depth_q<=0;depth_op_q<=0;
@@ -146,15 +154,30 @@ module a0_p144_dual_depth_blend_rmw #(
       rsp_valid<=0;rsp_error<=0;rsp_pixel_written<=0;
       host_tag_q<=host_read_valid && host_read_ready;
       if(busy_q) begin
-        // Exactly one in-flight two-lane RMW packet. BRAM data from
-        // preceding read edge is consumed before the next request.
-        busy_q<=0;
-        rsp_valid<=1;
-        rsp_error<=!read_beat_valid ||
-                   (mem0_req_valid && !mem0_ready) ||
-                   (mem1_req_valid && !mem1_ready);
-        if(read_beat_valid && mem0_ready && mem1_ready)
-          rsp_pixel_written<={mem1_req_valid,mem0_req_valid};
+        if(!commit_q) begin
+          // The read-result pulse exists only during this decision beat.
+          // Missing/error responses fail closed without entering commit.
+          if(!read_beat_valid) begin
+            busy_q<=0;
+            rsp_valid<=1;rsp_error<=1;
+          end else begin
+            commit_mask_q<={mask_q[1] && depth1_pass,
+                            mask_q[0] && depth0_pass};
+            commit0_data_q<={blend0,
+              depth_write_q ? depth_q : mem0_rsp_data[23:0]};
+            commit1_data_q<={blend1,
+              depth_write_q ? depth_q : mem1_rsp_data[23:0]};
+            commit_q<=1;
+          end
+        end else begin
+          // Single registered writeback beat; no next packet is accepted.
+          busy_q<=0;commit_q<=0;
+          rsp_valid<=1;
+          rsp_error<=(mem0_req_valid && !mem0_ready) ||
+                     (mem1_req_valid && !mem1_ready);
+          if(mem0_ready && mem1_ready)
+            rsp_pixel_written<={mem1_req_valid,mem0_req_valid};
+        end
       end else if(fire_op) begin
         if(!valid_packet) begin
           rsp_valid<=1;
@@ -165,7 +188,7 @@ module a0_p144_dual_depth_blend_rmw #(
           if(mem0_ready && mem1_ready)
             rsp_pixel_written<={lane1_valid,lane0_valid};
         end else begin
-          busy_q<=1;
+          busy_q<=1;commit_q<=0;
           mask_q<={lane1_valid,lane0_valid};
           x0_q<=lane0_x;y0_q<=lane0_y;
           x1_q<=lane1_x;y1_q<=lane1_y;

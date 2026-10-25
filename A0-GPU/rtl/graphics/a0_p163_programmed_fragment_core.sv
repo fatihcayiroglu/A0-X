@@ -77,6 +77,9 @@ module a0_p163_programmed_fragment_core #(
   logic depth_write_q,blend_q;
   logic [7:0] alpha_q;
   logic [15:0] px_q,py_q;
+  // P171: coordinate mux is resolved at transaction boundaries, not in
+  // the same cycle as the dual-bank framebuffer address arithmetic.
+  logic [15:0] fb_x_q,fb_y_q;
 
   wire raster_ready,raster_pixel_valid,raster_done;
   wire [15:0] raster_x,raster_y;
@@ -88,8 +91,6 @@ module a0_p163_programmed_fragment_core #(
   wire [1:0] rmw_written;
   wire mem_host_valid,mem_host_error;
   wire [23:0] mem_host_color,mem_host_depth;
-  wire [15:0] clear_x=16'(clear_pos_q%FRAME_WIDTH);
-  wire [15:0] clear_y=16'(clear_pos_q/FRAME_WIDTH);
   wire signed [15:0] uv_pixel_x=px_q,uv_pixel_y=py_q;
   wire signed [15:0] tex_u=uv_mode_q!=0 ? interpolated_u_q :
     ($signed(px_q <<< 8)+uv_u_q);
@@ -173,8 +174,8 @@ module a0_p163_programmed_fragment_core #(
     .op_valid(clear_op || pixel_op),.op_ready(rmw_ready),
     .op_clear(clear_op),
     .lane0_valid(1'b1),.lane1_valid(1'b0),
-    .lane0_x(clear_op?clear_x:px_q),
-    .lane0_y(clear_op?clear_y:py_q),
+    .lane0_x(fb_x_q),
+    .lane0_y(fb_y_q),
     .lane1_x(16'd0),.lane1_y(16'd0),
     .source_rgb(clear_op?clear_rgb_q:color_q),
     .source_depth(clear_op?clear_z_q:depth_q),
@@ -203,7 +204,7 @@ module a0_p163_programmed_fragment_core #(
       uv_next_id_q<=0;uv_expected_id_q<=0;uv_wait_cycles_q<=0;
       clear_rgb_q<=0;clear_z_q<=0;depth_q<=0;color_q<=0;
       depth_op_q<=0;depth_write_q<=0;blend_q<=0;alpha_q<=0;
-      px_q<=0;py_q<=0;
+      px_q<=0;py_q<=0;fb_x_q<=0;fb_y_q<=0;
       shaded_pixels<=0;shader_instructions<=0;texture_operations<=0;
       last_shaded_rgb<=0;clear_done<=0;tri_done<=0;
       for(i=0;i<8;i=i+1)seed_regs[i]<=0;
@@ -225,6 +226,7 @@ module a0_p163_programmed_fragment_core #(
           end else if(clear_valid && clear_ready)begin
             clear_rgb_q<=clear_color;clear_z_q<=clear_depth;
             clear_pos_q<=0;initialized_q<=0;
+            fb_x_q<=0;fb_y_q<=0;
             shaded_pixels<=0;shader_instructions<=0;texture_operations<=0;
             state_q<=CLEAR_ISSUE;
           end else if(tri_valid && program_length==0)begin
@@ -254,7 +256,12 @@ module a0_p163_programmed_fragment_core #(
           if(rmw_rsp_error)begin fault_q<=1;state_q<=FAILED;end
           else if(clear_pos_q==PIXELS-1)begin
             initialized_q<=1;clear_done<=1;state_q<=IDLE;
-          end else begin clear_pos_q<=clear_pos_q+1'b1;state_q<=CLEAR_ISSUE;end
+          end else begin
+            clear_pos_q<=clear_pos_q+1'b1;
+            fb_x_q<=16'((clear_pos_q+1'b1)%FRAME_WIDTH);
+            fb_y_q<=16'((clear_pos_q+1'b1)/FRAME_WIDTH);
+            state_q<=CLEAR_ISSUE;
+          end
         end
         SCAN:begin
           if(raster_done)begin tri_done<=1;state_q<=IDLE;end
@@ -299,6 +306,7 @@ module a0_p163_programmed_fragment_core #(
           else if(shader_done)begin
             if(shader_retired!=length_q)begin fault_q<=1;state_q<=FAILED;end
             else begin
+              fb_x_q<=px_q;fb_y_q<=py_q;
               color_q<=shader_data[23:0];
               last_shaded_rgb<=shader_data[23:0];
               shader_instructions<=shader_instructions+16'(shader_retired);
