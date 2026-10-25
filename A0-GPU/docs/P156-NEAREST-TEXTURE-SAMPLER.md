@@ -6,6 +6,14 @@ The sampler has single-clock write and sample ports, deterministic **sample-over
 
 Sample coordinates are signed **16-bit integer texel indices**, not normalized floating-point UVs. `sample_repeat=0` clamps negative and out-of-range indices to the nearest edge; `sample_repeat=1` wraps modulo texture width/height via low-bit masking. Texture dimensions must be positive powers of two between 2 and 256. Default FPGA qualification uses 16×16; a follow-up may add interpolated attributes, normalized coordinates, bilinear filtering, mipmaps and actual shader texture-fetch instructions.
 
+## Verified real RTL and ECP5 research result — 25 October 2026
+
+At head `16869da984d6f5ac66daa60a11f1bb99be7b542d`, genuine Icarus executed **2,185 correctly tagged nearest-neighbor samples** against an independent signed integer address/RGBA oracle: **1,095 clamp and 1,090 repeat** accesses, **258 texture writes**, **128 continuous one-sample-per-clock input handshakes**, **2,068 stalled-response cycles**, a deliberate accepted-sample/refused-write collision, and a reset that invalidates old texels. The standalone module contains no shader program execution.
+
+**The first FPGA route had an important failure:** it passed placement/routing but inferred **128 `TRELLIS_DPR16X4` distributed RAM elements and no `DP16KD` BRAM**, so the gate rightly rejected it. P156 was corrected by separating the clocked raw RAM read register from the valid-texel response masking mux, with `ram_style="block"`. New genuine Yosys+nextpnr ECP5-85K CABGA756 speed6 seed1, 5MHz internal tool target and unconstrained external pins then **fully mapped and routed** with exactly **130 external RTL I/O bits**, **1 real `DP16KD` BRAM** and **110.6195 MHz tool-estimated standalone Fmax**. This is not a physical board clock nor the P155 complete per-fragment graphics frequency.
+
+The final documentation-head workflow run is required before any merge.
+
 ## Required real evidence
 
 - True Icarus RTL with an independent signed integer addressing and RGBA scoreboard: all 256 texels initialized with distinct data, >2,170 tested sample requests, 2,048 deterministic randomized signed out-of-range clamp/repeat requests, **128 consecutive accepted sample inputs (one per clock)**, exact response IDs and all 32 RGBA bits.
