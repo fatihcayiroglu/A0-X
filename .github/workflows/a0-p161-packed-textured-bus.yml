@@ -1,0 +1,98 @@
+name: A0-X P161 full textured GPU 76-bit packed bus
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p161_packed_textured_command_top.sv'
+      - 'A0-GPU/tests/rtl/a0_p161_packed_textured_p102_tb.sv'
+      - 'A0-GPU/docs/P161-PACKED-TEXTURE-BUS.md'
+      - '.github/workflows/a0-p161-packed-textured-bus.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p161_packed_textured_command_top.sv'
+      - '.github/workflows/a0-p161-packed-textured-bus.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p161-p102-packed-full-texture-oracle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Icarus HDL
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y iverilog
+      - name: Verify host texture writes and full RGB/depth against independent oracle
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P161/rtl
+          iverilog -g2012 -s a0_p161_packed_textured_p102_tb \
+            -o EVIDENCE/P161/rtl/packed.vvp \
+            A0-GPU/rtl/texture/a0_p156_nearest_texture.sv \
+            A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv \
+            A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv \
+            A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv \
+            A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv \
+            A0-GPU/rtl/graphics/a0_p68_depth_compare.sv \
+            A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv \
+            A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv \
+            A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv \
+            A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv \
+            A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv \
+            A0-GPU/rtl/graphics/a0_p160_textured_fragment_trial.sv \
+            A0-GPU/rtl/graphics/a0_p161_packed_textured_command_top.sv \
+            A0-GPU/tests/rtl/a0_p161_packed_textured_p102_tb.sv \
+            2>&1 | tee EVIDENCE/P161/rtl/compile.log
+          timeout 150s vvp EVIDENCE/P161/rtl/packed.vvp | tee EVIDENCE/P161/rtl/result.log
+          grep -q '^P161_PACKED_TEXTURED_P102_PASS ' EVIDENCE/P161/rtl/result.log
+      - name: Upload real RTL evidence even if failed
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p161-packed-textured-rtl
+          path: EVIDENCE/P161/rtl
+          if-no-files-found: warn
+  p161-complete-packed-textured-ecp5-route:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real FPGA place-route tools
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y yosys nextpnr-ecp5
+      - name: Route true full-control 76-IO texture/shader/framebuffer module
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P161/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/texture/a0_p156_nearest_texture.sv A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv A0-GPU/rtl/graphics/a0_p160_textured_fragment_trial.sv A0-GPU/rtl/graphics/a0_p161_packed_textured_command_top.sv; hierarchy -check -top a0_p161_packed_textured_command_top; synth_ecp5 -top a0_p161_packed_textured_command_top -json EVIDENCE/P161/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P161/route/yosys.log
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P161/route/netlist.json \
+            --textcfg EVIDENCE/P161/route/route.config \
+            --report EVIDENCE/P161/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P161/route/nextpnr.log
+          python3 - <<'PY'
+          import collections,json
+          from pathlib import Path
+          p=Path('EVIDENCE/P161/route')
+          m=json.loads((p/'netlist.json').read_text())['modules']['a0_p161_packed_textured_command_top']
+          pins=sum(len(v['bits']) for v in m['ports'].values())
+          c=collections.Counter(v['type'] for v in m['cells'].values())
+          assert pins==76,('full packet bus changed width',pins)
+          assert c.get('DP16KD',0)>=3,('texture/framebuffer BRAM missing',c)
+          assert c.get('MULT18X18D',0)>=8,('texture/shader DSP missing',c)
+          assert not any(k.startswith('$') or k.startswith('a0_') or 'LATCH' in k.upper() for k in c),c
+          fmax=json.loads((p/'route.json').read_text())['fmax']
+          assert fmax and all(v['achieved']>=5 for v in fmax.values()),fmax
+          print('P161_FULL_CONTROL_76_IO_ECP5_PASS pins=%d BRAM=%d DSP=%d'%(pins,c['DP16KD'],c['MULT18X18D']))
+          PY
+      - name: Upload actual mapped resources and timings even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p161-packed-textured-ecp5
+          path: EVIDENCE/P161/route
+          if-no-files-found: warn
