@@ -1,0 +1,136 @@
+name: A0-X P156 real synchronous nearest RGBA texture sampler
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/texture/a0_p156_nearest_texture.sv'
+      - 'A0-GPU/tests/rtl/a0_p156_texture_oracle_tb.sv'
+      - 'A0-GPU/docs/P156-NEAREST-TEXTURE-SAMPLER.md'
+      - '.github/workflows/a0-p156-texture-nearest.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/texture/a0_p156_nearest_texture.sv'
+      - '.github/workflows/a0-p156-texture-nearest.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p156-real-signed-texture-oracle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Icarus
+        run: |
+          set -euo pipefail
+          if ! timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog; then
+            timeout 240s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog
+          fi
+      - name: Simulate actual texel RAM with independent RGBA/coordinate oracle
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P156/rtl
+          iverilog -g2012 -s a0_p156_texture_oracle_tb \
+            -o EVIDENCE/P156/rtl/sampler.vvp \
+            A0-GPU/rtl/texture/a0_p156_nearest_texture.sv \
+            A0-GPU/tests/rtl/a0_p156_texture_oracle_tb.sv \
+            2>&1 | tee EVIDENCE/P156/rtl/compile.log
+          timeout 120s vvp EVIDENCE/P156/rtl/sampler.vvp | tee EVIDENCE/P156/rtl/run.log
+          grep -q '^P156_TEXTURE_NEAREST_GOLDEN_PASS ' EVIDENCE/P156/rtl/run.log
+      - name: Ratchet no-vacuous texture oracle coverage
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,re
+          p=Path('EVIDENCE/P156/rtl')
+          log=(p/'run.log').read_text()
+          pat=r'^P156_TEXTURE_NEAREST_GOLDEN_PASS samples=(\d+) initialized_writes=(\d+) clamps=(\d+) repeats=(\d+) 1perclock_inputs=(\d+) held_response_cycles=(\d+) read_write_collisions=(\d+) reset_mask_checks=(\d+)$'
+          x=re.findall(pat,log,re.M)
+          assert len(x)==1,(x,log[-400:])
+          samples,writes,clamps,repeats,stream,held,conflicts,resets=map(int,x[0])
+          assert samples>=2170 and writes>=257
+          assert clamps>=1000 and repeats>=1000
+          assert stream==128 and held>=20 and conflicts==1 and resets==1
+          (p/'qualification.json').write_text(json.dumps({
+            'milestone':'P156','status':'PASS','actual_iverilog':True,
+            'independent_signed_clamp_repeat_rgba_oracle':True,
+            'real_texture_reads':samples,'real_texture_writes':writes,
+            'uninterrupted_samples_per_clock':stream,'held_rsp_cycles':held,
+            'single_port_arbitration_conflicts':conflicts,
+            'reset_masks_old_texels':True,'physical_GPU_or_shader_fetch':False
+          },indent=2))
+          print('P156_REAL_TEXTURE_CLAMP_REPEAT_AND_RESET_PASS')
+          PY
+      - name: Upload real RTL logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p156-true-texture-RTL
+          path: EVIDENCE/P156/rtl/
+          if-no-files-found: warn
+  p156-true-ECP5-texture-BRAM:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Yosys and nextpnr
+        run: |
+          set -euo pipefail
+          if ! timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5; then
+            timeout 300s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5
+          fi
+      - name: Map full single-port texture read/write RAM to ECP5 cells
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P156/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/texture/a0_p156_nearest_texture.sv; hierarchy -check -top a0_p156_nearest_texture; synth_ecp5 -top a0_p156_nearest_texture -json EVIDENCE/P156/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P156/route/yosys.log
+      - name: Actually place and route ECP5-85K CABGA756
+        run: |
+          set -euo pipefail
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P156/route/netlist.json \
+            --textcfg EVIDENCE/P156/route/route.config \
+            --report EVIDENCE/P156/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P156/route/nextpnr.log
+      - name: Assert actual mapped BRAM, 130-pin contract and timing
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,collections
+          p=Path('EVIDENCE/P156/route')
+          top=json.loads((p/'netlist.json').read_text())['modules']['a0_p156_nearest_texture']
+          io=sum(len(v['bits']) for v in top['ports'].values())
+          assert io==130,('Texture IO contract changed',io)
+          c=collections.Counter(v['type'] for v in top['cells'].values())
+          assert c.get('DP16KD',0)>=1,('Texture must use true FPGA block RAM',c)
+          assert not any(x.startswith('$') or x.startswith('a0_') or 'LATCH' in x.upper() for x in c),c
+          route=json.loads((p/'route.json').read_text())
+          for kind in ('TRELLIS_IO','TRELLIS_COMB','TRELLIS_FF'):
+              u=route['utilization'][kind]
+              assert 0<u['used']<=u['available'],(kind,u)
+          assert route['utilization']['TRELLIS_IO']['used']<=160
+          clocks=route['fmax']
+          assert clocks and any('clk' in k for k in clocks)
+          for k,v in clocks.items():
+              assert v['constraint']>=5 and v['achieved']>=v['constraint'],(k,v)
+          (p/'qualification.json').write_text(json.dumps({
+            'milestone':'P156','status':'PASS','actual_ecp5_routing':True,
+            'packed_texture_size':'16x16 RGBA8888','io_bits':io,
+            'real_DP16KD':c['DP16KD'],'logic_cells':sum(c.values()),
+            'tool_estimated_Fmax_MHz':clocks,'physical_board':False,
+            'shader_texture_fetch_integration':False
+          },indent=2))
+          print('P156_ECP5_TRUE_TEXTURE_BRAM_ROUTE_PASS')
+          print('P156_MAPPED_DP16KD',c['DP16KD'])
+          for k,v in clocks.items():print('P156_TEXTURE_TOOL_FMAX_MHZ',v['achieved'])
+          PY
+      - name: Preserve actual synthesis/PnR evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p156-genuine-ecp5-texture
+          path: EVIDENCE/P156/route/
+          if-no-files-found: warn
