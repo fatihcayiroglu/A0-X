@@ -1,0 +1,171 @@
+name: A0-X P155 early-depth fragment reject, exact P102 and ECP5
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p155_fragment_early_depth_trial.sv'
+      - 'A0-GPU/rtl/graphics/a0_p155_packed_early_depth_command_top.sv'
+      - 'A0-GPU/tests/rtl/a0_p155_early_depth_p102_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p155_packed_early_depth_p102_tb.sv'
+      - 'A0-GPU/docs/P155-CONSERVATIVE-EARLY-Z.md'
+      - '.github/workflows/a0-p155-early-depth.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p155_fragment_early_depth_trial.sv'
+      - 'A0-GPU/rtl/graphics/a0_p155_packed_early_depth_command_top.sv'
+      - '.github/workflows/a0-p155-early-depth.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p155-fullframe-early-Z-P102:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real HDL test tool
+        run: |
+          set -euo pipefail
+          if ! timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog; then
+            timeout 240s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 600s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 iverilog
+          fi
+      - name: Run independent original P102 RGB-depth oracle and genuine P155 depth BRAM
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P155/rtl
+          sources=(
+            A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv
+            A0-GPU/rtl/shader/a0_p151_unorm_microprogram.sv
+            A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv
+            A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv
+            A0-GPU/rtl/graphics/a0_p68_depth_compare.sv
+            A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv
+            A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv
+            A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv
+            A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv
+            A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv
+            A0-GPU/rtl/graphics/a0_p155_fragment_early_depth_trial.sv
+            A0-GPU/rtl/graphics/a0_p155_packed_early_depth_command_top.sv
+          )
+          for dims in '4 4' '7 5' '8 8'; do
+            read -r w h <<< "$dims"
+            id="${w}x${h}"
+            for test in a0_p155_early_depth_p102_tb a0_p155_packed_early_depth_p102_tb; do
+              iverilog -g2012 -s "$test" \
+                -P"$test.FRAME_WIDTH=$w" -P"$test.FRAME_HEIGHT=$h" \
+                -o "EVIDENCE/P155/rtl/$test-$id.vvp" "${sources[@]}" \
+                "A0-GPU/tests/rtl/$test.sv" \
+                2>&1 | tee "EVIDENCE/P155/rtl/$test-$id-compile.log"
+              timeout 120s vvp "EVIDENCE/P155/rtl/$test-$id.vvp" | tee "EVIDENCE/P155/rtl/$test-$id.log"
+            done
+            grep -q '^P155_EARLY_DEPTH_P102_PASS ' "EVIDENCE/P155/rtl/a0_p155_early_depth_p102_tb-$id.log"
+            grep -q '^P155_PACKED_EARLY_DEPTH_P102_PASS ' "EVIDENCE/P155/rtl/a0_p155_packed_early_depth_p102_tb-$id.log"
+          done
+      - name: Strictly assert depth rejection skips actual shader invocations
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re,json
+          p=Path('EVIDENCE/P155/rtl')
+          pattern=r'^P155_EARLY_DEPTH_P102_PASS size=(\d+)x(\d+) clears=(\d+) draws=(\d+) checked=(\d+) shader_invocations=(\d+) early_rejected=(\d+) done=(\d+) partial=(\d+) zero=(\d+) host_stalls=(\d+)$'
+          packed=r'^P155_PACKED_EARLY_DEPTH_P102_PASS size=(\d+)x(\d+) pixels=(\d+) first_pass_shaded=(\d+) second_pass_early_rejected=(\d+) bus_txns=(\d+) rejected=(\d+)$'
+          ev={}
+          for shape,n in [('4x4',16),('7x5',35),('8x8',64)]:
+              a=(p/f'a0_p155_early_depth_p102_tb-{shape}.log').read_text()
+              b=(p/f'a0_p155_packed_early_depth_p102_tb-{shape}.log').read_text()
+              m=re.findall(pattern,a,re.M); q=re.findall(packed,b,re.M)
+              assert len(m)==1 and len(q)==1,(shape,a[-350:],b[-350:])
+              x,y,clears,draws,checks,inv,early,done,partial,zero,stalls=map(int,m[0])
+              px,py,reads,first,bus_early,tx,errs=map(int,q[0])
+              assert shape==f'{x}x{y}'==f'{px}x{py}'
+              assert (clears,draws,partial,zero)==(5,5,1,2)
+              assert checks>=10*n and early==n and inv==done==2*n+4
+              assert stalls>=1 and reads==2*n and first==4 and bus_early==n
+              assert tx>=6*n and errs>=6
+              ev[shape]={'full_color_depth_comparisons':checks,
+                'fragment_shader_executions':inv,'conservatively_depth_rejected':early,
+                'packed_bus_readbacks':reads,'packed_rejected_fragments':bus_early}
+          (p/'qualification.json').write_text(json.dumps({
+             'milestone':'P155','status':'PASS','actual_P151_shader':True,
+             'actual_P144_P139_P138_BRAM_depth_peek':True,
+             'unchanged_independent_P102':True,'shapes':ev,
+             'game_FPS_or_physical_card':False
+          },indent=2))
+          print('P155_REAL_EARLY_Z_SHADER_SKIP_P102_PASS three geometry matrices')
+          PY
+      - name: Upload real Icarus logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p155-early-z-P102-rtl
+          path: EVIDENCE/P155/rtl/
+          if-no-files-found: warn
+
+  p155-packed-shader-ECP5-route:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Yosys and nextpnr
+        run: |
+          set -euo pipefail
+          if ! timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5; then
+            timeout 300s sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20
+            timeout 900s sudo apt-get install -y -o Acquire::Retries=2 -o Acquire::http::Timeout=20 yosys nextpnr-ecp5
+          fi
+      - name: Map real P155 shader and BRAM with packed 76-IO command top
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P155/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv A0-GPU/rtl/shader/a0_p151_unorm_microprogram.sv A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv A0-GPU/rtl/graphics/a0_p155_fragment_early_depth_trial.sv A0-GPU/rtl/graphics/a0_p155_packed_early_depth_command_top.sv; hierarchy -check -top a0_p155_packed_early_depth_command_top -chparam FRAME_WIDTH 4 -chparam FRAME_HEIGHT 4; synth_ecp5 -top a0_p155_packed_early_depth_command_top -json EVIDENCE/P155/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P155/route/yosys.log
+      - name: Real ECP5-85K CABGA756 speed6 seed1 routing
+        run: |
+          set -euo pipefail
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P155/route/netlist.json \
+            --textcfg EVIDENCE/P155/route/route.config \
+            --report EVIDENCE/P155/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P155/route/nextpnr.log
+      - name: Enforce real FPGA BRAM, DSP, IO and clock evidence
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,collections
+          p=Path('EVIDENCE/P155/route')
+          top=json.loads((p/'netlist.json').read_text())['modules']['a0_p155_packed_early_depth_command_top']
+          io=sum(len(x['bits']) for x in top['ports'].values())
+          assert io==76,('P155 full16bit packed host external IO changed',io)
+          c=collections.Counter(x['type'] for x in top['cells'].values())
+          assert c.get('DP16KD',0)>=2,('Real depth/color FPGA BRAM absent',c)
+          assert c.get('MULT18X18D',0)>=4,('Real P151 shader DSP absent',c)
+          assert c.get('TRELLIS_FF',0)>=200,('State and shader regs absent',c)
+          assert not any(x.startswith('$') or x.startswith('a0_') or 'LATCH' in x.upper() for x in c),c
+          route=json.loads((p/'route.json').read_text())
+          for kind in ('TRELLIS_IO','TRELLIS_COMB','TRELLIS_FF'):
+              u=route['utilization'][kind]
+              assert 0<u['used']<=u['available'],(kind,u)
+          assert route['utilization']['TRELLIS_IO']['used']<=96
+          clocks=route['fmax']
+          assert clocks and any('clk' in k for k in clocks)
+          for key,v in clocks.items():
+              assert v['constraint']>=5 and v['achieved']>=v['constraint'],(key,v)
+          (p/'qualification.json').write_text(json.dumps({
+            'milestone':'P155','status':'PASS','mapped_real_DP16KD':c['DP16KD'],
+            'mapped_real_DSP':c['MULT18X18D'],'packed_external_IO':io,
+            'tool_Fmax':clocks,'real_physical_GPU':False,
+            'routed_external_pin_constraints':False
+          },indent=2))
+          print('P155_ECP5_EARLY_Z_REAL_BRAM_SHADER_ROUTE_PASS')
+          print('P155_MAPPED_DP16KD',c['DP16KD'])
+          print('P155_MAPPED_SHADER_DSP',c['MULT18X18D'])
+          for k,v in clocks.items():print('P155_TOOL_FMAX_MHZ',v['achieved'])
+          PY
+      - name: Upload FPGA reports, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p155-real-early-z-ecp5-route
+          path: EVIDENCE/P155/route/
+          if-no-files-found: warn
