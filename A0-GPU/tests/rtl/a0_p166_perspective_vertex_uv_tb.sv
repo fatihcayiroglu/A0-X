@@ -83,11 +83,22 @@ module a0_p166_perspective_vertex_uv_tb;
     integer eu,ev,expect_error,loops;
     reg signed [15:0] held_u,held_v;
     reg held_error;
+    reg signed [15:0] save_x0,save_y1,save_u2,save_v0;
+    reg signed [15:0] save_px,save_py;
+    reg [15:0] save_iw1;
     begin
       oracle(expect_error,eu,ev);
+      save_x0=x0;save_y1=y1;save_u2=u2;save_v0=v0;
+      save_px=pixel_x;save_py=pixel_y;save_iw1=inv_w1;
       @(negedge clk);req_id=8'(token);req_valid=1;
       if(!req_ready)$fatal(1,"P166 interpolation request refused while idle");
       @(negedge clk);req_valid=0;
+      // P169: poison live caller signals after acceptance. The registered
+      // geometry, weighted attributes and denominator must be immutable.
+      x0=x0 ^ 16'h356a;y1=y1 ^ 16'h39c5;
+      u2=u2 ^ 16'h510f;v0=v0 ^ 16'h1a7e;
+      pixel_x=pixel_x ^ 16'h1342;pixel_y=pixel_y ^ 16'h611a;
+      inv_w1=16'd0;
       if(req_ready)$fatal(1,"P166 accepted overlap during signed divider");
       loops=0;
       while(!rsp_valid)begin
@@ -112,6 +123,8 @@ module a0_p166_perspective_vertex_uv_tb;
       rsp_ready=1;
       @(negedge clk);rsp_ready=0;
       if(rsp_valid || !req_ready)$fatal(1,"P166 response not retired");
+      x0=save_x0;y1=save_y1;u2=save_u2;v0=save_v0;
+      pixel_x=save_px;pixel_y=save_py;inv_w1=save_iw1;
       checked=checked+1;
       if(inv_w0==0 || inv_w1==0 || inv_w2==0)zero_w_cases=zero_w_cases+1;
       if(wide_constant_case)wide_cases=wide_cases+1;

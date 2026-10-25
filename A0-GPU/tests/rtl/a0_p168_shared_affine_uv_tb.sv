@@ -2,6 +2,7 @@
 // P168: independent, previously validated P164 affine engine is the golden
 // hardware reference for the P166 shared-engine all-one inverse-W fast path.
 // Covers signed UV, reverse winding, degeneration, extrapolation and reset.
+// P169 adds three registered arithmetic stages before the 128 divider clocks.
 module a0_p168_shared_affine_uv_tb;
   reg clk=0;
   always #5 clk=~clk;
@@ -85,8 +86,8 @@ module a0_p168_shared_affine_uv_tb;
         $fatal(1,"P168 shared/reference mismatch token=%0d err=%b/%b uv=%0d,%0d/%0d,%0d",
           token,aerror,berror,$signed(au),$signed(av),$signed(bu),$signed(bv));
       if(!aerror)begin
-        if(cycles!=128)
-          $fatal(1,"P168 affine result latency drifted cycles=%0d expected=128",cycles);
+        if(cycles!=131)
+          $fatal(1,"P168 affine result latency drifted cycles=%0d expected=131",cycles);
         fast_cycles=fast_cycles+cycles;
         passed=passed+1;
         if(au<0 || av<0)negative=negative+1;
