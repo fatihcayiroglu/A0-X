@@ -28,8 +28,8 @@ module a0_p164_affine_vertex_uv_tb;
 
   // A deliberately different reference implementation from the RTL:
   // signed longint scalar cross products and native mathematical division.
-  function automatic longint signed cross(input longint signed ax,ay,bx,by,cx,cy);
-    cross=(bx-ax)*(cy-ay)-(by-ay)*(cx-ax);
+  function automatic longint signed scalar_cross_product(input longint signed ax,ay,bx,by,cx,cy);
+    scalar_cross_product=(bx-ax)*(cy-ay)-(by-ay)*(cx-ax);
   endfunction
   task automatic oracle(
     output integer expected_error,
@@ -41,11 +41,11 @@ module a0_p164_affine_vertex_uv_tb;
       px2=2*longint'(pixel_x)+1;
       py2=2*longint'(pixel_y)+1;
       // Twice all coordinates so raster sample means actual pixel center.
-      a0=cross(longint'(x1)*2,longint'(y1)*2,
+      a0=scalar_cross_product(longint'(x1)*2,longint'(y1)*2,
                longint'(x2)*2,longint'(y2)*2,px2,py2);
-      a1=cross(longint'(x2)*2,longint'(y2)*2,
+      a1=scalar_cross_product(longint'(x2)*2,longint'(y2)*2,
                longint'(x0)*2,longint'(y0)*2,px2,py2);
-      a2=cross(longint'(x0)*2,longint'(y0)*2,
+      a2=scalar_cross_product(longint'(x0)*2,longint'(y0)*2,
                longint'(x1)*2,longint'(y1)*2,px2,py2);
       // Doubling all geometric coordinates scales numerator and area
       // equally, so this oracle stays independent of P164 edge widths.
