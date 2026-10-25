@@ -85,6 +85,7 @@ module a0_p163_programmed_fragment_core #(
   wire [23:0] mem_host_color,mem_host_depth;
   wire [15:0] clear_x=16'(clear_pos_q%FRAME_WIDTH);
   wire [15:0] clear_y=16'(clear_pos_q/FRAME_WIDTH);
+  wire signed [15:0] uv_pixel_x=px_q,uv_pixel_y=py_q;
   wire signed [15:0] tex_u=affine_mode_q ? affine_u_q :
     ($signed(px_q <<< 8)+uv_u_q);
   wire signed [15:0] tex_v=affine_mode_q ? affine_v_q :
@@ -133,7 +134,7 @@ module a0_p163_programmed_fragment_core #(
     .x2(vx2_q),.y2(vy2_q),
     .u0(vu0_q),.v0(vv0_q),.u1(vu1_q),.v1(vv1_q),
     .u2(vu2_q),.v2(vv2_q),
-    .pixel_x($signed(px_q)),.pixel_y($signed(py_q)),
+    .pixel_x(uv_pixel_x),.pixel_y(uv_pixel_y),
     .req_id(uv_next_id_q),.rsp_valid(uv_rsp_valid),
     .rsp_ready(state_q==UV_WAIT),.rsp_id(uv_rsp_id),
     .rsp_u(uv_rsp_u),.rsp_v(uv_rsp_v),.rsp_error(uv_rsp_error)
