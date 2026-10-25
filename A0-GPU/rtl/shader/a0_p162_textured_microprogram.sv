@@ -1,4 +1,5 @@
 `timescale 1ns/1ps
+// P170: one-cycle look-ahead instruction fetch and decoded operand snapshot.
 // P162: real P150 arithmetic and P159/P158/P156 BRAM bilinear TEX in one
 // sequential, interlocked 8-register / 16-instruction research shader.
 // TEX is a 25th instruction class bit; the previous 24-bit ALU ISA is intact.
@@ -31,7 +32,13 @@ module a0_p162_textured_microprogram(
   logic [24:0] insn_ram[0:15];
   logic [3:0] pc_q;
   logic [4:0] run_len_q;
-  wire [24:0] instruction=insn_ram[pc_q];
+  // Instructions are prefetched on launch / prior retirement; the ALU
+  // therefore never sees the 16-entry instruction RAM mux on its data path.
+  logic [24:0] instruction_q;
+  wire [24:0] instruction=instruction_q;
+  // Both source registers are snapshotted during the existing DECODE cycle.
+  // No extra instruction clocks or live-indexed input to P150/P158.
+  logic [31:0] operand_a_q,operand_b_q;
   wire is_tex=instruction[24];
   wire [7:0] alpha=instruction[23:16];
   wire [3:0] mask=instruction[15:12];
@@ -47,7 +54,7 @@ module a0_p162_textured_microprogram(
     .clk(clk),.rst_n(rst_n),
     .req_valid(state_q==ALU_ISSUE),.req_ready(alu_ready),
     .req_id({4'd0,pc_q}),.opcode(op),
-    .operand_a(regs[src_a]),.operand_b(regs[src_b]),
+    .operand_a(operand_a_q),.operand_b(operand_b_q),
     .uniform_alpha(alpha),.lane_mask(mask),
     .rsp_valid(alu_valid),.rsp_ready(state_q==ALU_WAIT),
     .rsp_id(alu_id),.rsp_data(alu_result)
@@ -68,8 +75,8 @@ module a0_p162_textured_microprogram(
     .write_x(texture_write_x),.write_y(texture_write_y),
     .write_rgba(texture_write_rgba),
     .sample_valid(state_q==TEX_ISSUE),.sample_ready(tex_ready),
-    .sample_u($signed(regs[src_a][15:0])),
-    .sample_v($signed(regs[src_a][31:16])),
+    .sample_u($signed(operand_a_q[15:0])),
+    .sample_v($signed(operand_a_q[31:16])),
     .sample_repeat(alpha[0]),.sample_id({4'd0,pc_q}),
     .rsp_valid(tex_valid),.rsp_ready(state_q==TEX_WAIT),
     .rsp_id(tex_id),.rsp_rgba(tex_rgba),.rsp_present(tex_present)
@@ -89,6 +96,7 @@ module a0_p162_textured_microprogram(
   always_ff @(posedge clk) begin
     if(!rst_n)begin
       state_q<=IDLE;pc_q<=0;run_len_q<=0;
+      instruction_q<=0;operand_a_q<=0;operand_b_q<=0;
       retired_count<=0;texture_retired_count<=0;
       done<=0;fault<=0;
       for(i=0;i<8;i=i+1)regs[i]<=0;
@@ -107,6 +115,7 @@ module a0_p162_textured_microprogram(
               fault<=1;state_q<=FAILED;
             end else begin
               pc_q<=0;run_len_q<=start_length;
+              instruction_q<=insn_ram[0];
               retired_count<=0;texture_retired_count<=0;
               state_q<=DECODE;
             end
@@ -116,6 +125,7 @@ module a0_p162_textured_microprogram(
           end
         end
         DECODE:begin
+          operand_a_q<=regs[src_a];operand_b_q<=regs[src_b];
           // TEX reserves the legacy ALU opcode/srcB fields and alpha[7:1].
           // Malformed encodings never sample or write any destination.
           if(is_tex)begin
@@ -133,7 +143,10 @@ module a0_p162_textured_microprogram(
             retired_count<=retired_count+5'd1;
             if(retired_count+5'd1==run_len_q)begin
               done<=1;state_q<=IDLE;
-            end else begin pc_q<=pc_q+4'd1;state_q<=DECODE;end
+            end else begin
+              instruction_q<=insn_ram[pc_q+4'd1];
+              pc_q<=pc_q+4'd1;state_q<=DECODE;
+            end
           end
         end
         TEX_ISSUE:if(tex_ready)state_q<=TEX_WAIT;
@@ -148,7 +161,10 @@ module a0_p162_textured_microprogram(
             texture_retired_count<=texture_retired_count+5'd1;
             if(retired_count+5'd1==run_len_q)begin
               done<=1;state_q<=IDLE;
-            end else begin pc_q<=pc_q+4'd1;state_q<=DECODE;end
+            end else begin
+              instruction_q<=insn_ram[pc_q+4'd1];
+              pc_q<=pc_q+4'd1;state_q<=DECODE;
+            end
           end
         end
         FAILED:begin end
