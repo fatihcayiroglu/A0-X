@@ -1,0 +1,92 @@
+name: A0-X P162 real programmable TEX shader microprogram
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv'
+      - 'A0-GPU/tests/rtl/a0_p162_textured_microprogram_tb.sv'
+      - 'A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv'
+      - 'A0-GPU/rtl/texture/a0_p156_nearest_texture.sv'
+      - 'A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv'
+      - 'A0-GPU/docs/P162-PROGRAMMABLE-TEX-INSTRUCTION.md'
+      - '.github/workflows/a0-p162-textured-microprogram.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv'
+      - '.github/workflows/a0-p162-textured-microprogram.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p162-independent-textured-program-oracle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Icarus HDL
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y iverilog
+      - name: Run original shader/TEX RTL with independent scalar reference
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P162/rtl
+          iverilog -g2012 -s a0_p162_textured_microprogram_tb \
+            -o EVIDENCE/P162/rtl/shader.vvp \
+            A0-GPU/rtl/texture/a0_p156_nearest_texture.sv \
+            A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv \
+            A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv \
+            A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv \
+            A0-GPU/tests/rtl/a0_p162_textured_microprogram_tb.sv \
+            2>&1 | tee EVIDENCE/P162/rtl/compile.log
+          timeout 150s vvp EVIDENCE/P162/rtl/shader.vvp | tee EVIDENCE/P162/rtl/result.log
+          grep -q '^P162_TEXTURED_MICROPROGRAM_PASS programs=50 retired=772 TEX=194 ' EVIDENCE/P162/rtl/result.log
+      - name: Keep Icarus evidence on failures too
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p162-independent-program-rtl
+          path: EVIDENCE/P162/rtl
+          if-no-files-found: warn
+  p162-routed-integrated-shader-ecp5:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install true FPGA synthesis and place-route tools
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y yosys nextpnr-ecp5
+      - name: Map and fully route integrated shader with real texture BRAM/DSP
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P162/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/texture/a0_p156_nearest_texture.sv A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv; hierarchy -check -top a0_p162_textured_microprogram; synth_ecp5 -top a0_p162_textured_microprogram -json EVIDENCE/P162/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P162/route/yosys.log
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P162/route/netlist.json \
+            --textcfg EVIDENCE/P162/route/route.config \
+            --report EVIDENCE/P162/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P162/route/nextpnr.log
+          python3 - <<'PY'
+          import collections,json
+          from pathlib import Path
+          p=Path('EVIDENCE/P162/route')
+          m=json.loads((p/'netlist.json').read_text())['modules']['a0_p162_textured_microprogram']
+          pins=sum(len(x['bits']) for x in m['ports'].values())
+          types=collections.Counter(x['type'] for x in m['cells'].values())
+          assert pins==165,('unexpected shader interface IO width',pins)
+          assert types.get('DP16KD',0)>=1,('true texture BRAM lost',types)
+          assert types.get('MULT18X18D',0)>=12,('texture and ALU DSP expected',types)
+          assert not any(t.startswith('$') or t.startswith('a0_') or 'LATCH' in t.upper() for t in types),types
+          freq=json.loads((p/'route.json').read_text())['fmax']
+          assert freq and all(x['achieved']>=5 for x in freq.values()),freq
+          print('P162_PROGRAMMABLE_TEXTURED_ECP5_PASS pins=%d BRAM=%d DSP=%d'%(pins,types['DP16KD'],types['MULT18X18D']))
+          PY
+      - name: Keep mapped resources and actual route on failures too
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p162-integrated-shader-ecp5
+          path: EVIDENCE/P162/route
+          if-no-files-found: warn
