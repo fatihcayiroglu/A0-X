@@ -6,6 +6,22 @@ The separate 76-bit P155 packed host-command top sets MODE bit5 as the opt-in ea
 
 **Important performance trade-off:** Passing fragments must pay an extra synchronous BRAM depth read before shader and RMW, so Early-Z may make visible scenes slower. Its intended benefit is reducing expensive shader invocations in occluded scenes; no universal speedup or render FPS is claimed.
 
+## Verified real RTL and FPGA result (25 October 2026)
+
+At head `7a7bda01daa227b305b2da54a542d4602a9185cd`, all **five triggered GitHub Actions workflows succeeded**, including P126, P127, P132, P134, and both required P155 jobs. Real Icarus tested the actual P151/P150 UNORM shader, the P38 triangle raster and true P144/P139/P138 BRAM with full RGB+depth readback against the unchanged P102 reference.
+
+| Framebuffer | Full RGB/depth pixel checks | Shader completions (visible cases) | Occluded fragments skipped before shader | Packed-host pixel reads |
+|---|---:|---:|---:|---:|
+| 4×4 | 160 | 36 | 16 | 32 |
+| 7×5 | 350 | 74 | 35 | 70 |
+| 8×8 | 640 | 132 | 64 | 128 |
+
+Each geometry completed **five clears, five triangles** with scissor clipping, empty scissor, full visible, full occlusion using LESS, and equal-depth acceptance using LESS_EQUAL, plus reset during rendering. All accepted shader RGB and 24-bit stored depths matched independent P102 coverage/depth reference. During full occlusion, each of 16/35/64 covered fragments skipped its P151 shader entirely. The **separate real 76-signal packed-host test** also passed MODE bit5 (Early-Z), reserved bit6, register24 rejected count (16/35/64), all color/depth reads and invalid commands.
+
+The same source was actually mapped by Yosys and placed/routed with nextpnr ECP5-85K, CABGA756 speed6, seed1, 4×4 framebuffer, 5MHz research target and unconstrained physical external pins. Full packed P155 top: **76 mapped I/O bits**, **4 `DP16KD` block RAM**, **22 `MULT18X18D` DSP** and **35.3469MHz tool-reported Fmax**. P154's earlier separately routed top was ~33.30MHz; these modeled Fmax figures are not board-measured rendering FPS and do not account for extra depth-read clocks on passing pixels.
+
+The documentation-only final commit must also pass exact-head CI before merge.
+
 ## Required evidence before merge
 
 - Actual Icarus P155 full RGB+depth frame differential vs unchanged original P102 on 4x4, 7x5 and 8x8: 5 clears and 5 draws, including 2x2 scissor, zero-width scissor, reset while active, full triangle, **fully depth-occluded LESS** and **equal-depth LESS_EQUAL acceptance**, along with all 48-bit framebuffer reads after each clear/draw.
