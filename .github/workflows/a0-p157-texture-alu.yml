@@ -1,0 +1,85 @@
+name: A0-X P157 texture BRAM to SIMD arithmetic
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/shader/a0_p157_texture_alu_link.sv'
+      - 'A0-GPU/tests/rtl/a0_p157_texture_alu_tb.sv'
+      - '.github/workflows/a0-p157-texture-alu.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/shader/a0_p157_texture_alu_link.sv'
+      - '.github/workflows/a0-p157-texture-alu.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p157-real-texture-simd-oracle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual Icarus HDL
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y iverilog
+      - name: Run real P156 RAM to P150 ALU with independent math
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P157
+          iverilog -g2012 -s a0_p157_texture_alu_tb \
+            -o EVIDENCE/P157/test.vvp \
+            A0-GPU/rtl/texture/a0_p156_nearest_texture.sv \
+            A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv \
+            A0-GPU/rtl/shader/a0_p157_texture_alu_link.sv \
+            A0-GPU/tests/rtl/a0_p157_texture_alu_tb.sv \
+            2>&1 | tee EVIDENCE/P157/compile.log
+          timeout 120s vvp EVIDENCE/P157/test.vvp | tee EVIDENCE/P157/test.log
+          grep -q '^P157_TEXTURE_SIMD_ORACLE_PASS checked=193 ' EVIDENCE/P157/test.log
+      - name: Upload strict actual HDL logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p157-texture-simd-oracle
+          path: EVIDENCE/P157
+          if-no-files-found: warn
+  p157-real-ecp5-route:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Yosys and nextpnr
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y yosys nextpnr-ecp5
+      - name: Synthesize and route real BRAM texture + SIMD ALU
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P157/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/texture/a0_p156_nearest_texture.sv A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv A0-GPU/rtl/shader/a0_p157_texture_alu_link.sv; hierarchy -check -top a0_p157_texture_alu_link; synth_ecp5 -top a0_p157_texture_alu_link -json EVIDENCE/P157/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P157/route/yosys.log
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P157/route/netlist.json \
+            --textcfg EVIDENCE/P157/route/route.config \
+            --report EVIDENCE/P157/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P157/route/nextpnr.log
+          python3 - <<'PY'
+          import json,collections
+          from pathlib import Path
+          p=Path('EVIDENCE/P157/route')
+          top=json.loads((p/'netlist.json').read_text())['modules']['a0_p157_texture_alu_link']
+          cells=collections.Counter(x['type'] for x in top['cells'].values())
+          assert cells.get('DP16KD',0)>=1, cells
+          assert cells.get('MULT18X18D',0)>=4,cells
+          assert not any(x.startswith('$') or x.startswith('a0_') or 'LATCH' in x.upper() for x in cells),cells
+          timing=json.loads((p/'route.json').read_text())['fmax']
+          assert timing and all(v['achieved']>=5 for v in timing.values()),timing
+          print('P157_ACTUAL_TEXTURE_BRAM_SIMD_ECP5_PASS DP16KD=%d DSP=%d'%(cells['DP16KD'],cells['MULT18X18D']))
+          PY
+      - name: Upload synthesis/route evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p157-ecp5-route
+          path: EVIDENCE/P157/route
+          if-no-files-found: warn
