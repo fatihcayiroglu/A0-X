@@ -50,28 +50,36 @@ module a0_p156_nearest_texture #(
                                   ADDR_BITS'(tex_x);
   wire [ADDR_BITS-1:0] write_addr=ADDR_BITS'(write_y)*ADDR_BITS'(TEX_WIDTH)+
                                    ADDR_BITS'(write_x);
-  logic [31:0] tex_ram[0:TEXELS-1];
+  (* ram_style = "block" *) logic [31:0] tex_ram[0:TEXELS-1];
+  logic [31:0] tex_read_q;
   logic [TEXELS-1:0] written_q;
 
   // RAM data is intentionally not reset so synthesis can map DP16KD.
   // The validity bitmap IS reset: stale/uninitialized texels read as
   // zero without leaking undefined BRAM contents after reset.
+  // Register the *raw* RAM output directly, separately from the
+  // valid/zero masking mux, to permit genuine ECP5 DP16KD mapping.
+  // Its read register advances only when an incoming sample is accepted:
+  // this also preserves the output word during host backpressure.
   always_ff @(posedge clk) begin
     if(write_fire)tex_ram[write_addr]<=write_rgba;
+    if(sample_fire)tex_read_q<=tex_ram[read_addr];
   end
+  assign rsp_rgba=rsp_present?tex_read_q:32'd0;
   always_ff @(posedge clk) begin
     if(!rst_n)written_q<='0;
     else if(write_fire)written_q[write_addr]<=1'b1;
   end
   always_ff @(posedge clk) begin
     if(!rst_n)begin
-      rsp_valid<=0;rsp_id<=0;rsp_rgba<=0;rsp_present<=0;
+      rsp_valid<=0;rsp_id<=0;rsp_present<=0;
     end else if(sample_ready)begin
       rsp_valid<=sample_valid;
       if(sample_fire)begin
         rsp_id<=sample_id;
         rsp_present<=written_q[read_addr];
-        rsp_rgba<=written_q[read_addr]?tex_ram[read_addr]:32'd0;
+        // Raw tex_read_q is captured by the dedicated BRAM read port.
+        // Only the validity bit is stored in the host response slot.
       end
     end
   end
