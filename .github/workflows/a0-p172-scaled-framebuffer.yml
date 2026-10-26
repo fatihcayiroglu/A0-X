@@ -9,6 +9,8 @@ on:
       - 'A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv'
       - 'A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv'
       - 'A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv'
       - 'A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv'
   push:
     branches: [main]
@@ -19,6 +21,8 @@ on:
       - 'A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv'
       - 'A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv'
       - 'A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv'
       - 'A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv'
   workflow_dispatch:
 permissions:
@@ -60,6 +64,8 @@ jobs:
             A0-GPU/rtl/graphics/a0_p166_perspective_vertex_uv.sv \
             A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv \
             A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv \
+            A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv \
+            A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv \
             A0-GPU/tests/rtl/a0_p172_scaled_programmed_fragment_p102_tb.sv \
             2>&1 | tee "EVIDENCE/P172/rtl/$id-compile.log"
             timeout 180s vvp "EVIDENCE/P172/rtl/$id.vvp" | tee "EVIDENCE/P172/rtl/$id.log"
@@ -102,7 +108,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p EVIDENCE/P172/route
-          yosys -p "read_verilog -sv A0-GPU/rtl/texture/a0_p156_nearest_texture.sv A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv A0-GPU/rtl/graphics/a0_p166_perspective_vertex_uv.sv A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv; chparam -set FRAME_WIDTH 16 -set FRAME_HEIGHT 16 a0_p163_packed_programmed_command_top; hierarchy -check -top a0_p163_packed_programmed_command_top; synth_ecp5 -top a0_p163_packed_programmed_command_top -json EVIDENCE/P172/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P172/route/yosys.log
+          yosys -p "read_verilog -sv A0-GPU/rtl/texture/a0_p156_nearest_texture.sv A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv A0-GPU/rtl/graphics/a0_p166_perspective_vertex_uv.sv A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv; chparam -set FRAME_WIDTH 16 -set FRAME_HEIGHT 16 a0_p175_scaled_programmed_command_top; hierarchy -check -top a0_p175_scaled_programmed_command_top; synth_ecp5 -top a0_p175_scaled_programmed_command_top -json EVIDENCE/P172/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P172/route/yosys.log
           nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
             --json EVIDENCE/P172/route/netlist.json \
             --textcfg EVIDENCE/P172/route/route.config \
@@ -113,16 +119,17 @@ jobs:
           import collections,json
           from pathlib import Path
           p=Path('EVIDENCE/P172/route')
-          m=json.loads((p/'netlist.json').read_text())['modules']['a0_p163_packed_programmed_command_top']
+          m=json.loads((p/'netlist.json').read_text())['modules']['a0_p175_scaled_programmed_command_top']
           pins=sum(len(v['bits']) for v in m['ports'].values())
           c=collections.Counter(v['type'] for v in m['cells'].values())
           assert pins==77,('full host control bus must fit 77 real IO pins',pins)
-          assert c.get('DP16KD',0)>=3,('P156 and P144 BRAM missing',c)
+          assert c.get('DP16KD',0)==5,('P175 scaled core must preserve five real BRAMs',c)
           assert c.get('MULT18X18D',0)>=40,('P162 texture or ALU DSP missing',c)
           assert c.get('MULT18X18D',0)<=72,('P172 exceeded P171 72-DSP budget',c)
           assert not any(k.startswith('$') or k.startswith('a0_') or 'LATCH' in k.upper() for k in c),c
           fmax=json.loads((p/'route.json').read_text())['fmax']
           assert fmax and all(v['achieved']>=15 for v in fmax.values()),('P172 16x16 FPGA frequency <15MHz',fmax)
+          assert all(v['achieved']>=36.5 for v in fmax.values()),('P175 scaled ECP5 Fmax below 36.5MHz',fmax)
           achieved_mhz=min(v['achieved'] for v in fmax.values())
           print('P172_SCALED_16X16_ECP5_PASS pins=%d pixels=256 BRAM=%d DSP=%d MHz=%.2f'%(pins,c['DP16KD'],c['MULT18X18D'],achieved_mhz))
           PY

@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - 'A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv'
       - 'A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv'
       - 'A0-GPU/tests/rtl/a0_p144_dual_depth_blend_tb.sv'
       - 'A0-GPU/docs/P171-REGISTERED-FRAMEBUFFER-COORDS.md'
@@ -11,6 +13,8 @@ on:
     branches: [main]
     paths:
       - 'A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv'
       - 'A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv'
       - 'A0-GPU/tests/rtl/a0_p144_dual_depth_blend_tb.sv'
       - '.github/workflows/a0-p171-registered-framebuffer.yml'

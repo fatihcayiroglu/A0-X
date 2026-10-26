@@ -40,20 +40,38 @@ module a0_p172_scaled_programmed_fragment_p102_tb #(
   always @(posedge clk) begin
     measured_clock_cycles <= measured_clock_cycles+64'd1;
     if(draw_fire)accepted_draw_cycle<=measured_clock_cycles;
-    if(dut.core_tri_done && measured_draw_count<2)begin
+    if(core_tri_done_debug && measured_draw_count<2)begin
       completed_draw_cycles[measured_draw_count]<=measured_clock_cycles-accepted_draw_cycle;
       measured_draw_count<=measured_draw_count+1;
     end
   end
 
-  a0_p163_packed_programmed_command_top #(
-    .FRAME_WIDTH(W),.FRAME_HEIGHT(H)
-  ) dut(
-    .clk(clk),.rst_n(rst_n),
-    .req_valid(req_valid),.req_write(req_write),.req_ready(req_ready),
-    .req_addr(req_addr),.req_wdata(req_wdata),
-    .rsp_valid(rsp_valid),.rsp_error(rsp_error),.rsp_rdata(rsp_rdata)
-  );
+  // P175: keep the exact legacy 4x4 top/core physically unchanged.
+  // Explicit scaled hardware has its own compiled module and timing proof.
+  wire core_tri_done_debug;
+  generate
+    if(W>=8 && H>=8)begin: scaled_design
+      a0_p175_scaled_programmed_command_top #(
+        .FRAME_WIDTH(W),.FRAME_HEIGHT(H)
+      ) dut(
+        .clk(clk),.rst_n(rst_n),
+        .req_valid(req_valid),.req_write(req_write),.req_ready(req_ready),
+        .req_addr(req_addr),.req_wdata(req_wdata),
+        .rsp_valid(rsp_valid),.rsp_error(rsp_error),.rsp_rdata(rsp_rdata)
+      );
+      assign core_tri_done_debug=dut.core_tri_done;
+    end else begin: legacy_design
+      a0_p163_packed_programmed_command_top #(
+        .FRAME_WIDTH(W),.FRAME_HEIGHT(H)
+      ) dut(
+        .clk(clk),.rst_n(rst_n),
+        .req_valid(req_valid),.req_write(req_write),.req_ready(req_ready),
+        .req_addr(req_addr),.req_wdata(req_wdata),
+        .rsp_valid(rsp_valid),.rsp_error(rsp_error),.rsp_rdata(rsp_rdata)
+      );
+      assign core_tri_done_debug=dut.core_tri_done;
+    end
+  endgenerate
   a0_triangle_scissor_depth_blend_p102 #(
     .FRAME_WIDTH(W),.FRAME_HEIGHT(H)
   ) reference(
@@ -217,8 +235,8 @@ module a0_p172_scaled_programmed_fragment_p102_tb #(
         rd(17,status);loops=loops+1;
         if(status[2])$fatal(1,"P163 core unexpectedly faulted: %h",status);
         if(loops>500+W*H*96)
-          $fatal(1,"P172 scaled frame poll deadline shape=%0dx%0d bit=%0d loops=%0d status=%h core_state=%0d",
-            W,H,bit_index,loops,status,dut.core.state_q);
+          $fatal(1,"P172 scaled frame poll deadline shape=%0dx%0d bit=%0d loops=%0d status=%h",
+            W,H,bit_index,loops,status);
       end
     end
   endtask
