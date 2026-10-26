@@ -82,7 +82,7 @@ jobs:
           assert all(v.get('achieved',0)>0 for v in fmax.values()),('P181 missing actual placed-route clock',fmax)
           assert 0<c.get('LUT4',0)<=83640 and 0<c.get('TRELLIS_FF',0)<=83640,('P181 missing or overfull Yosys LUT4/FF evidence',c)
           achieved_mhz=min(v['achieved'] for v in fmax.values())
-          print('P181_REAL_32X64_ECP5_ROUTE_PASS pins=%d pixels=4096 BRAM=%d DSP=%d LUT4=%d FF=%d MHz=%.2f'%(pins,c['DP16KD'],c['MULT18X18D'],c['LUT4'],c['TRELLIS_FF'],achieved_mhz))
+          print('P181_REAL_64X64_ECP5_ROUTE_PASS pins=%d pixels=4096 BRAM=%d DSP=%d LUT4=%d FF=%d MHz=%.2f'%(pins,c['DP16KD'],c['MULT18X18D'],c['LUT4'],c['TRELLIS_FF'],achieved_mhz))
           PY
       - name: Preserve routed bitstream and mapped evidence on failure
         if: always()
