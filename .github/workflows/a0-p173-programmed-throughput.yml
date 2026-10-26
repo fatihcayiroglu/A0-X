@@ -31,11 +31,11 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get install -y iverilog
-      - name: Time two actual shader/raster/RMW programs at 4x4, 8x8, 16x16
+      - name: Time two actual shader/raster/RMW programs at 4x4, 8x8, 16x16, 32x32
         run: |
           set -euo pipefail
           mkdir -p EVIDENCE/P173/rtl
-          for shape in '4 4' '8 8' '16 16'; do
+          for shape in '4 4' '8 8' '16 16' '32 32'; do
             read -r w h <<< "$shape"
             id="${w}x${h}"
           iverilog -g2012 -s a0_p172_scaled_programmed_fragment_p102_tb \
@@ -72,7 +72,7 @@ jobs:
           import re
           from pathlib import Path
           first,second=[],[]
-          for w,h in ((4,4),(8,8),(16,16)):
+          for w,h in ((4,4),(8,8),(16,16),(32,32)):
               log=(Path('EVIDENCE/P173/rtl')/f'{w}x{h}.log').read_text()
               o=re.findall(r'^P172_SCALED_PROGRAMMED_P102_PASS shape=(\d+)x(\d+) txns=(\d+) tex_writes=(\d+) insn_writes=(\d+) seed_writes=(\d+) clears=(\d+) draws=(\d+) full_frame_pixels=(\d+) covered=(\d+) host_rejections=(\d+) busy_denials=(\d+) missing_faults=(\d+)$',log,re.M)
               m=re.findall(r'^P173_DRAW_TIMING_PASS shape=(\d+)x(\d+) first_cycles=(\d+) second_cycles=(\d+) pixels_each=(\d+)$',log,re.M)
@@ -89,11 +89,12 @@ jobs:
                   assert b[2]<=51*w*h+2 and b[3]<=34*w*h+2,(w,h,b,'P175 scaled core failed cycle win')
               first.append(b[2]);second.append(b[3])
               print(f'P173_CORE_TIMING_EVIDENCE shape={w}x{h} first_cycles={b[2]} second_cycles={b[3]} first_cycles_per_pixel={b[2]/(w*h):.3f} second_cycles_per_pixel={b[3]/(w*h):.3f}')
-          assert first[0]<first[1]<first[2],first
-          assert second[0]<second[1]<second[2],second
-          print('P173_MEASURED_THROUGHPUT_PASS shapes=3 oracle_pixels=1680 draw_pixels=672')
-          print('P174_NO_PER_PIXEL_REGRESSION_PASS shapes=3 fast_budget=52*pixels+2 simple_budget=35*pixels+2')
-          print('P175_ISOLATED_SCALED_CORE_GAIN_PASS accelerated_shapes=2 legacy_4x4_preserved=1')
+          assert all(first[i]<first[i+1] for i in range(len(first)-1)),first
+          assert all(second[i]<second[i+1] for i in range(len(second)-1)),second
+          print('P173_MEASURED_THROUGHPUT_PASS shapes=4 oracle_pixels=6800 draw_pixels=2720')
+          print('P174_NO_PER_PIXEL_REGRESSION_PASS shapes=4 fast_budget=52*pixels+2 simple_budget=35*pixels+2')
+          print('P175_ISOLATED_SCALED_CORE_GAIN_PASS accelerated_shapes=3 legacy_4x4_preserved=1')
+          print('P176_LARGE_FRAME_DRAW_TIMING_PASS width=32 height=32 measured_pixels=1024 oracle_reads=5120')
           PY
       - name: Preserve raw RTL measurements
         if: always()
