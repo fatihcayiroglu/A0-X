@@ -101,19 +101,25 @@ module a0_p175_scaled_programmed_fragment_core #(
   // raster-pixel boundary as px_q/py_q. PREP_REG then begins at R1, saving
   // one sequential shader-seed cycle per fragment. Affine/perspective modes
   // still wait for their independently checked interpolator response.
-  // Two signed Q8.8 coordinates are packed into the shader's 32-bit R0.
-  // Check the signed 17-bit shifted sum before narrowing: high Y offsets
-  // can otherwise silently wrap into negative texture addresses.
-  wire signed [16:0] preload_tex_u_wide=
-    ($signed({1'b0,raster_x}) <<< 8)+$signed(uv_u_q);
-  wire signed [16:0] preload_tex_v_wide=
-    ($signed({1'b0,raster_y}) <<< 8)+$signed(uv_v_q);
-  wire uv_preload_overflow=(preload_tex_u_wide[16]!=preload_tex_u_wide[15]) ||
-                            (preload_tex_v_wide[16]!=preload_tex_v_wide[15]);
+  // Q8.8 screen coordinates have zero fractional bits. The geometry
+  // contract bounds raster_x/y to 0..127; only the signed INTEGER byte
+  // needs an addition. Offset fractional bits propagate unchanged.
+  // Keep one extra integer sign bit to reject overflow before narrowing.
+  // This nine-bit operation is equivalent to the former 17-bit sum for
+  // every supported 1..128 framebuffer dimension.
+  wire signed [8:0] preload_tex_u_integer_wide=
+    $signed({2'b00,raster_x[6:0]})+$signed({uv_u_q[15],uv_u_q[15:8]});
+  wire signed [8:0] preload_tex_v_integer_wide=
+    $signed({2'b00,raster_y[6:0]})+$signed({uv_v_q[15],uv_v_q[15:8]});
+  wire uv_preload_overflow=
+    (preload_tex_u_integer_wide[8]!=preload_tex_u_integer_wide[7]) ||
+    (preload_tex_v_integer_wide[8]!=preload_tex_v_integer_wide[7]);
   wire preload_shader_uv=state_q==SCAN && raster_pixel_valid &&
     uv_mode_q==2'd0 && !uv_preload_overflow && shader_ready;
-  wire signed [15:0] preload_tex_u=preload_tex_u_wide[15:0];
-  wire signed [15:0] preload_tex_v=preload_tex_v_wide[15:0];
+  wire signed [15:0] preload_tex_u=
+    {preload_tex_u_integer_wide[7:0],uv_u_q[7:0]};
+  wire signed [15:0] preload_tex_v=
+    {preload_tex_v_integer_wide[7:0],uv_v_q[7:0]};
   wire [31:0] shader_write_data=preload_shader_uv ?
     {preload_tex_v,preload_tex_u} : shader_seed;
   wire clear_op=state_q==CLEAR_ISSUE;
