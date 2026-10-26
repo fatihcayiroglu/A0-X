@@ -8,6 +8,9 @@ on:
       - 'A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv'
       - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv'
       - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv'
+      - 'A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv'
+      - 'A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv'
+      - 'A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv'
       - 'A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv'
   push:
     branches: [main]
@@ -17,6 +20,9 @@ on:
       - 'A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv'
       - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv'
       - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv'
+      - 'A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv'
+      - 'A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv'
+      - 'A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv'
       - 'A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv'
   workflow_dispatch:
 permissions:
