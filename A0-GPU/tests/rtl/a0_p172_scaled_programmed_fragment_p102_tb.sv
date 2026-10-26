@@ -202,7 +202,9 @@ module a0_p172_scaled_programmed_fragment_p102_tb #(
       while(!status[bit_index])begin
         rd(17,status);loops=loops+1;
         if(status[2])$fatal(1,"P163 core unexpectedly faulted: %h",status);
-        if(loops>2500)$fatal(1,"P163 real shader/raster frame stuck");
+        if(loops>500+W*H*96)
+          $fatal(1,"P172 scaled frame poll deadline shape=%0dx%0d bit=%0d loops=%0d status=%h core_state=%0d",
+            W,H,bit_index,loops,status,dut.core.state_q);
       end
     end
   endtask
