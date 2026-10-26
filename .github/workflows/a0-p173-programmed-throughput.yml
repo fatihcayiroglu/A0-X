@@ -76,11 +76,15 @@ jobs:
               assert a[3]==256 and a[10]>=8 and a[11]==a[12]==1,a
               assert b[:2]==[w,h] and b[4]==w*h,b
               assert all(w*h<v<500*w*h for v in b[2:4]),b
+              # P174: exact deterministic P173 measured-cycle upper envelope.
+              # Faster pipelines pass; unexplained extra cycles fail closed.
+              assert (b[2] <= 52*w*h+2 and b[3] <= 35*w*h+2), (w,h,b,'baseline=52*pixels+2 / 35*pixels+2')
               first.append(b[2]);second.append(b[3])
               print(f'P173_CORE_TIMING_EVIDENCE shape={w}x{h} first_cycles={b[2]} second_cycles={b[3]} first_cycles_per_pixel={b[2]/(w*h):.3f} second_cycles_per_pixel={b[3]/(w*h):.3f}')
           assert first[0]<first[1]<first[2],first
           assert second[0]<second[1]<second[2],second
           print('P173_MEASURED_THROUGHPUT_PASS shapes=3 oracle_pixels=1680 draw_pixels=672')
+          print('P174_NO_PER_PIXEL_REGRESSION_PASS shapes=3 fast_budget=52*pixels+2 simple_budget=35*pixels+2')
           PY
       - name: Preserve raw RTL measurements
         if: always()
