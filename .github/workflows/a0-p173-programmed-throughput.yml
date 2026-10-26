@@ -1,0 +1,91 @@
+name: A0-X P173 real programmed draw-cycle throughput evidence
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/tests/rtl/a0_p172_scaled_programmed_fragment_p102_tb.sv'
+      - 'A0-GPU/docs/P173-PROGRAMMED-PIXEL-THROUGHPUT.md'
+      - '.github/workflows/a0-p173-programmed-throughput.yml'
+      - 'A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/tests/rtl/a0_p172_scaled_programmed_fragment_p102_tb.sv'
+      - '.github/workflows/a0-p173-programmed-throughput.yml'
+      - 'A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p173-measured-core-draw-cycles:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real RTL simulator
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y iverilog
+      - name: Time two actual shader/raster/RMW programs at 4x4, 8x8, 16x16
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P173/rtl
+          for shape in '4 4' '8 8' '16 16'; do
+            read -r w h <<< "$shape"
+            id="${w}x${h}"
+          iverilog -g2012 -s a0_p172_scaled_programmed_fragment_p102_tb \
+            -Pa0_p172_scaled_programmed_fragment_p102_tb.W="$w" \
+            -Pa0_p172_scaled_programmed_fragment_p102_tb.H="$h" \
+            -o EVIDENCE/P173/rtl/$id.vvp \
+            A0-GPU/rtl/texture/a0_p156_nearest_texture.sv \
+            A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv \
+            A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv \
+            A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv \
+            A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv \
+            A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv \
+            A0-GPU/rtl/graphics/a0_p68_depth_compare.sv \
+            A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv \
+            A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv \
+            A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv \
+            A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv \
+            A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv \
+            A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv \
+            A0-GPU/rtl/graphics/a0_p166_perspective_vertex_uv.sv \
+            A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv \
+            A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv \
+            A0-GPU/tests/rtl/a0_p172_scaled_programmed_fragment_p102_tb.sv \
+            2>&1 | tee "EVIDENCE/P173/rtl/$id-compile.log"
+            timeout 180s vvp "EVIDENCE/P173/rtl/$id.vvp" | tee "EVIDENCE/P173/rtl/$id.log"
+            grep -q "^P172_SCALED_PROGRAMMED_P102_PASS shape=$id " "EVIDENCE/P173/rtl/$id.log"
+            grep -q "^P173_DRAW_TIMING_PASS shape=$id " "EVIDENCE/P173/rtl/$id.log"
+          done
+      - name: Enforce exact P102 oracle and measured nonvacuous draw-cycle results
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          first,second=[],[]
+          for w,h in ((4,4),(8,8),(16,16)):
+              log=(Path('EVIDENCE/P173/rtl')/f'{w}x{h}.log').read_text()
+              o=re.findall(r'^P172_SCALED_PROGRAMMED_P102_PASS shape=(\d+)x(\d+) txns=(\d+) tex_writes=(\d+) insn_writes=(\d+) seed_writes=(\d+) clears=(\d+) draws=(\d+) full_frame_pixels=(\d+) covered=(\d+) host_rejections=(\d+) busy_denials=(\d+) missing_faults=(\d+)$',log,re.M)
+              m=re.findall(r'^P173_DRAW_TIMING_PASS shape=(\d+)x(\d+) first_cycles=(\d+) second_cycles=(\d+) pixels_each=(\d+)$',log,re.M)
+              assert len(o)==len(m)==1,(w,h,log[-800:])
+              a=list(map(int,o[0])); b=list(map(int,m[0]))
+              assert a[:2]==[w,h] and a[6:10]==[3,2,5*w*h,2*w*h],(w,h,a)
+              assert a[3]==256 and a[10]>=8 and a[11]==a[12]==1,a
+              assert b[:2]==[w,h] and b[4]==w*h,b
+              assert all(w*h<v<500*w*h for v in b[2:4]),b
+              first.append(b[2]);second.append(b[3])
+              print(f'P173_CORE_TIMING_EVIDENCE shape={w}x{h} first_cycles={b[2]} second_cycles={b[3]} first_cycles_per_pixel={b[2]/(w*h):.3f} second_cycles_per_pixel={b[3]/(w*h):.3f}')
+          assert first[0]<first[1]<first[2],first
+          assert second[0]<second[1]<second[2],second
+          print('P173_MEASURED_THROUGHPUT_PASS shapes=3 oracle_pixels=1680 draw_pixels=672')
+          PY
+      - name: Preserve raw RTL measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p173-core-draw-cycle-evidence
+          path: EVIDENCE/P173/rtl
+          if-no-files-found: warn

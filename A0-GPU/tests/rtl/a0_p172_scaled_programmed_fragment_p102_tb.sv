@@ -31,6 +31,20 @@ module a0_p172_scaled_programmed_fragment_p102_tb #(
   integer txns=0,errors=0,texwrites=0,insn_writes=0,seed_writes=0;
   integer clears=0,draws=0,pixels=0,covered=0;
   integer busy_denials=0,missing_faults=0;
+  // P173: instrument actual core command-accept to raster completion latency.
+  // The monitor never drives the DUT or reference; measurements exclude host
+  // framebuffer readback and include the real shader/RMW work for each draw.
+  reg [63:0] measured_clock_cycles=0, accepted_draw_cycle=0;
+  reg [63:0] completed_draw_cycles [0:1];
+  integer measured_draw_count=0;
+  always @(posedge clk) begin
+    measured_clock_cycles <= measured_clock_cycles+64'd1;
+    if(draw_fire)accepted_draw_cycle<=measured_clock_cycles;
+    if(dut.core_tri_done && measured_draw_count<2)begin
+      completed_draw_cycles[measured_draw_count]<=measured_clock_cycles-accepted_draw_cycle;
+      measured_draw_count<=measured_draw_count+1;
+    end
+  end
 
   a0_p163_packed_programmed_command_top #(
     .FRAME_WIDTH(W),.FRAME_HEIGHT(H)
@@ -326,10 +340,17 @@ module a0_p172_scaled_programmed_fragment_p102_tb #(
     uv_u=16'sd95;uv_v=-16'sd417;
     wr(6,{uv_v,uv_u});program_shader();
     clear_frame();draw_frame();
-    if(draws!=2 || clears!=2 || pixels!=4*W*H || covered<12 ||
+    if(draws!=2 || clears!=2 || pixels!=4*W*H || covered!=2*W*H ||
        texwrites!=256 || busy_denials!=1 || errors<8)
       $fatal(1,"P163 insufficient real coverage draws=%0d clears=%0d pixels=%0d covered=%0d tex=%0d errors=%0d",
              draws,clears,pixels,covered,texwrites,errors);
+    if(measured_draw_count!=2 ||
+       completed_draw_cycles[0]<W*H || completed_draw_cycles[1]<W*H ||
+       completed_draw_cycles[0]>W*H*500 || completed_draw_cycles[1]>W*H*500)
+      $fatal(1,"P173 draw timing missing/implausible shape=%0dx%0d done=%0d first=%0d second=%0d",W,H,
+        measured_draw_count,completed_draw_cycles[0],completed_draw_cycles[1]);
+    $display("P173_DRAW_TIMING_PASS shape=%0dx%0d first_cycles=%0d second_cycles=%0d pixels_each=%0d",W,H,
+      completed_draw_cycles[0],completed_draw_cycles[1],W*H);
     rd(25,response);if(response!==32'd256)$fatal(1,"P163 host texture telemetry mismatch");
     rd(26,response);if(response!==32'(insn_writes))$fatal(1,"P163 instruction upload count mismatch");
     rd(27,response);if(response!==32'(seed_writes))$fatal(1,"P163 seed upload count mismatch");
