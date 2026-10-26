@@ -104,7 +104,8 @@ module a0_p163_programmed_fragment_core #(
     ($signed(seed_pixel_x <<< 8)+uv_u_q);
   wire signed [15:0] tex_v=uv_mode_q!=0 ? interpolated_v_q :
     ($signed(seed_pixel_y <<< 8)+uv_v_q);
-  wire [31:0] shader_seed=seed_ptr_q==0 ? {tex_v,tex_u} :
+  wire [31:0] shader_seed=(preload_shader_uv || seed_ptr_q==0) ?
+    {tex_v,tex_u} :
     seed_regs[seed_ptr_q];
   wire clear_op=state_q==CLEAR_ISSUE;
   wire pixel_op=state_q==WRITE_PIXEL;
