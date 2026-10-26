@@ -93,12 +93,12 @@ module a0_p138_dual_bank_framebuffer #(
     end
 
     // Constant-index enables may shorten the small-bank critical path.
-    // Elaborate this topology only for <=256 bank entries: a wider array of
+    // Elaborate this topology only for <=512 bank entries: a wider array of
     // per-bit always_ff processes is prohibitively slow in real RTL simulation
     // (first P182 128x64 oracle exceeded 240s). Large banks retain the
     // original proven dynamic-index sequential assignment. The same branch
     // is used by synthesis AND simulation for each parameterized geometry.
-    generate if (BANK_DEPTH <= 256) begin : GEN_SMALL_VALID_BITS
+    generate if (BANK_DEPTH <= 512) begin : GEN_SMALL_VALID_BITS
         for (genvar valid_idx = 0; valid_idx < BANK_DEPTH; valid_idx = valid_idx + 1) begin : GEN_VALID_BITS
             wire valid0_set = bank0_we && (bank0_write_addr == ADDR_BITS'(valid_idx));
             wire valid1_set = bank1_we && (bank1_write_addr == ADDR_BITS'(valid_idx));
