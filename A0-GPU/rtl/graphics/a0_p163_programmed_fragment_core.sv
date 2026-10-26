@@ -92,21 +92,20 @@ module a0_p163_programmed_fragment_core #(
   wire mem_host_valid,mem_host_error;
   wire [23:0] mem_host_color,mem_host_depth;
   wire signed [15:0] uv_pixel_x=px_q,uv_pixel_y=py_q;
-  wire signed [15:0] tex_u=uv_mode_q!=0 ? interpolated_u_q :
-    ($signed(px_q <<< 8)+uv_u_q);
-  wire signed [15:0] tex_v=uv_mode_q!=0 ? interpolated_v_q :
-    ($signed(py_q <<< 8)+uv_v_q);
-  wire [31:0] shader_seed=seed_ptr_q==0 ? {tex_v,tex_u} : seed_regs[seed_ptr_q];
-  // P175: for the legacy screen-offset UV path, accept R0 at the same
-  // raster-pixel boundary as px_q/py_q. PREP_REG then begins at R1, saving
-  // one sequential shader-seed cycle per fragment. Affine/perspective modes
-  // still wait for their independently checked interpolator response.
+  // P175 timing refinement: a single shared pair of Q8.8 adders services
+  // both normal R0 seeding and scan-time preload. The source mux is resolved
+  // before the adders, avoiding duplicate coordinate/offset arithmetic and
+  // preserving the original checked affine/perspective UV response path.
   wire preload_shader_uv=state_q==SCAN && raster_pixel_valid &&
     uv_mode_q==2'd0 && shader_ready;
-  wire signed [15:0] preload_tex_u=$signed(raster_x <<< 8)+uv_u_q;
-  wire signed [15:0] preload_tex_v=$signed(raster_y <<< 8)+uv_v_q;
-  wire [31:0] shader_write_data=preload_shader_uv ?
-    {preload_tex_v,preload_tex_u} : shader_seed;
+  wire [15:0] seed_pixel_x=preload_shader_uv ? raster_x : px_q;
+  wire [15:0] seed_pixel_y=preload_shader_uv ? raster_y : py_q;
+  wire signed [15:0] tex_u=uv_mode_q!=0 ? interpolated_u_q :
+    ($signed(seed_pixel_x <<< 8)+uv_u_q);
+  wire signed [15:0] tex_v=uv_mode_q!=0 ? interpolated_v_q :
+    ($signed(seed_pixel_y <<< 8)+uv_v_q);
+  wire [31:0] shader_seed=seed_ptr_q==0 ? {tex_v,tex_u} :
+    seed_regs[seed_ptr_q];
   wire clear_op=state_q==CLEAR_ISSUE;
   wire pixel_op=state_q==WRITE_PIXEL;
   wire config_attempt=seed_write_valid || insn_write_valid || tex_write_valid;
@@ -167,7 +166,7 @@ module a0_p163_programmed_fragment_core #(
     .reg_write_valid((state_q==PREP_REG && shader_ready) ||
       preload_shader_uv),
     .reg_write_index(preload_shader_uv ? 3'd0 : seed_ptr_q),
-    .reg_write_data(shader_write_data),
+    .reg_write_data(shader_seed),
     .reg_read_index(output_reg_q),.reg_read_data(shader_data),
     .insn_write_valid(insn_write_valid && insn_write_ready),
     .insn_write_index(insn_write_index),.insn_write_data(insn_write_data),
