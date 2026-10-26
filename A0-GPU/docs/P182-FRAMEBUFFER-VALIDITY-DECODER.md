@@ -14,3 +14,9 @@ The existing `valid0[bank0_write_addr] <= 1` dynamic-index assignment after rese
 - Preserve failures and route evidence; if decoder increases congestion or breaks functionality, do **not** merge it. This draft stacks on P180 #57 until real exact-head evidence permits an integration choice.
 
 A place-and-route clock is not GPU frame rate, display throughput, PCIe capability, production GPU hardware or an RTX 6090-class result.
+
+## First exact-head timeout and constrained second experiment
+
+The original P182 `6e442a2` ran a constant-index flip-flop process at **every** bank entry, including 128×128. The real P180 128×64 simulation exceeded its unchanged 240-second limit (exit 124), despite smaller P138 RTL tests passing. This is a **failed CI run**, not an allowed skip or a reason to increase timeouts without evidence.
+
+The new experiment specializes at elaboration time: `BANK_DEPTH<=256` uses constant-index decode for small 16×16 (128 entries per bank) and lower; larger 32×32 / 32×64 / 64×64 / 128×128 banks retain the original dynamic-index logic. Simulation and physical synthesis use the **same code branch** for the same parameters. It can recover the critical 16×16 timing gate if successful but deliberately **does not claim** to improve physical 64×64 placement. A separate large-bank validity-memory architecture will be required for that issue. All original large-frame CI oracles must return to green.
