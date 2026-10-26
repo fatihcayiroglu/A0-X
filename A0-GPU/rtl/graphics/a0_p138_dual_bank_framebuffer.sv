@@ -92,13 +92,21 @@ module a0_p138_dual_bank_framebuffer #(
         if (bank1_re) bank1_read_q <= bank1[bank1_read_addr];
     end
 
-    always_ff @(posedge clk) begin
-        if (!rst_n) begin
-            valid0 <= '0;
-            valid1 <= '0;
-        end else begin
-            if (bank0_we) valid0[bank0_write_addr] <= 1'b1;
-            if (bank1_we) valid1[bank1_write_addr] <= 1'b1;
+    // One constant-index enable per validity bit avoids synthesizing
+    // a dynamic indexed assignment into a wide read/modify/write mux.
+    // The RAM contents still have no reset; validity bits alone reset.
+    // Separate bank decoders remain independent under two-lane access.
+    for (genvar valid_idx = 0; valid_idx < BANK_DEPTH; valid_idx = valid_idx + 1) begin : GEN_VALID_BITS
+        wire valid0_set = bank0_we && (bank0_write_addr == ADDR_BITS'(valid_idx));
+        wire valid1_set = bank1_we && (bank1_write_addr == ADDR_BITS'(valid_idx));
+        always_ff @(posedge clk) begin
+            if (!rst_n) begin
+                valid0[valid_idx] <= 1'b0;
+                valid1[valid_idx] <= 1'b0;
+            end else begin
+                if (valid0_set) valid0[valid_idx] <= 1'b1;
+                if (valid1_set) valid1[valid_idx] <= 1'b1;
+            end
         end
     end
 
