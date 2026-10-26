@@ -83,6 +83,12 @@ jobs:
                   r'^P173_DRAW_TIMING_PASS shape=(\d+)x(\d+) first_cycles=(\d+) second_cycles=(\d+) pixels_each=(\d+)$',
                   log, re.M)
               assert len(o) == len(m) == 1, (w, h, log[-800:])
+              overflow = re.findall(
+                  r'^P180_UV_OVERFLOW_FAIL_CLOSED_PASS shape=(\d+)x(\d+) status=([0-9a-fA-F]+)$',
+                  log, re.M)
+              assert len(overflow) == (1 if h >= 128 else 0), (w, h, overflow)
+              if h >= 128:
+                  assert tuple(map(int, overflow[0][:2])) == (w, h), overflow
               a = list(map(int, o[0]))
               b = list(map(int, m[0]))
               n = w * h

@@ -43,7 +43,7 @@ module a0_p175_scaled_programmed_command_top #(
   wire core_seed_ready,core_insn_ready,core_tex_ready;
   wire core_clear_ready,core_clear_done,core_tri_ready,core_tri_done;
   wire core_initialized,core_busy,core_fault;
-  wire [15:0] shaded_count,shader_insns,texture_ops;
+  wire [31:0] shaded_count,shader_insns,texture_ops;
   wire [23:0] last_rgb;
   wire core_host_ready,core_host_valid,core_host_error;
   wire [23:0] core_host_rgb,core_host_z;
@@ -241,9 +241,9 @@ module a0_p175_scaled_programmed_command_top #(
               if(pixel_cached_q)rsp_rdata<={8'd0,cached_z_q};
               else rsp_error<=1;
             end
-            SHADED_COUNT:rsp_rdata<={16'd0,shaded_count};
-            SHADER_INSNS:rsp_rdata<={16'd0,shader_insns};
-            TEXTURE_OPS:rsp_rdata<={16'd0,texture_ops};
+            SHADED_COUNT:rsp_rdata<=shaded_count;
+            SHADER_INSNS:rsp_rdata<=shader_insns;
+            TEXTURE_OPS:rsp_rdata<=texture_ops;
             LAST_RGB:rsp_rdata<={8'd0,last_rgb};
             IDENT:rsp_rdata<=DEVICE_ID;
             TEX_WRITES:rsp_rdata<={16'd0,tex_writes_q};
