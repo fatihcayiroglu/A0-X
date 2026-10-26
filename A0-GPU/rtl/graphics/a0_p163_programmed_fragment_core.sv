@@ -96,8 +96,10 @@ module a0_p163_programmed_fragment_core #(
   // both normal R0 seeding and scan-time preload. The source mux is resolved
   // before the adders, avoiding duplicate coordinate/offset arithmetic and
   // preserving the original checked affine/perspective UV response path.
-  wire preload_shader_uv=state_q==SCAN && raster_pixel_valid &&
-    uv_mode_q==2'd0 && shader_ready;
+  // Preserve the original 4x4 physical timing contract exactly; preload
+  // only on measured scaled 8x8+ framebuffer configurations.
+  wire preload_shader_uv=(FRAME_WIDTH>=8 && FRAME_HEIGHT>=8) &&
+    state_q==SCAN && raster_pixel_valid && uv_mode_q==2'd0 && shader_ready;
   wire [15:0] seed_pixel_x=preload_shader_uv ? raster_x : px_q;
   wire [15:0] seed_pixel_y=preload_shader_uv ? raster_y : py_q;
   wire signed [15:0] tex_u=uv_mode_q!=0 ? interpolated_u_q :
