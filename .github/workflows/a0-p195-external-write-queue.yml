@@ -1,0 +1,51 @@
+name: A0-X P195 external pixel write queue no-loss RTL
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/memory/a0_p195_external_pixel_write_queue.sv'
+      - 'A0-GPU/tests/rtl/a0_p195_external_write_queue_tb.sv'
+      - 'A0-GPU/docs/P195-EXTERNAL-PIXEL-WRITE-QUEUE.md'
+      - '.github/workflows/a0-p195-external-write-queue.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/memory/a0_p195_external_pixel_write_queue.sv'
+      - 'A0-GPU/tests/rtl/a0_p195_external_write_queue_tb.sv'
+      - '.github/workflows/a0-p195-external-write-queue.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p195-external-queue-rtl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual RTL simulator and synthesizer
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y iverilog yosys
+      - name: Simulate with ordered handshake scoreboard and bounded timeout
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P195/rtl
+          iverilog -g2012 -Wall -s a0_p195_external_write_queue_tb \
+            -o EVIDENCE/P195/rtl/p195.vvp \
+            A0-GPU/rtl/memory/a0_p195_external_pixel_write_queue.sv \
+            A0-GPU/tests/rtl/a0_p195_external_write_queue_tb.sv
+          timeout 240s vvp EVIDENCE/P195/rtl/p195.vvp | tee EVIDENCE/P195/rtl/p195.log
+          grep -q '^P195_EXTERNAL_WRITE_QUEUE_PASS frame=256x256 stress=1024 ordered=1027 rejected=2 depth=2 simultaneous_pop_push=1 reset_flush=1$' \
+            EVIDENCE/P195/rtl/p195.log
+      - name: Real Yosys synthesis and structural assertions
+        run: |
+          set -euo pipefail
+          yosys -Q -T -p 'read_verilog -sv A0-GPU/rtl/memory/a0_p195_external_pixel_write_queue.sv; hierarchy -check -top a0_p195_external_pixel_write_queue; synth -top a0_p195_external_pixel_write_queue; check -assert; stat' \
+            | tee EVIDENCE/P195/rtl/p195_yosys.log
+          grep -q 'End of script.' EVIDENCE/P195/rtl/p195_yosys.log
+      - name: Preserve logs whether successful or failed
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p195-external-write-queue-rtl
+          path: EVIDENCE/P195/rtl
+          if-no-files-found: warn
