@@ -1,0 +1,57 @@
+name: A0-X P197 synthesizable external word arbitration no-loss RTL
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/memory/a0_p197_external_word_port_arbiter.sv'
+      - 'A0-GPU/tests/rtl/a0_p197_external_word_port_arbiter_tb.sv'
+      - 'A0-GPU/rtl/memory/a0_p195_external_pixel_write_queue.sv'
+      - 'A0-GPU/tests/rtl/models/a0_p196_external_word_memory_model.sv'
+      - 'A0-GPU/docs/P197-EXTERNAL-WORD-ARBITER.md'
+      - '.github/workflows/a0-p197-external-word-arbiter.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/memory/a0_p197_external_word_port_arbiter.sv'
+      - 'A0-GPU/tests/rtl/a0_p197_external_word_port_arbiter_tb.sv'
+      - '.github/workflows/a0-p197-external-word-arbiter.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p197-external-port-rtl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Icarus and Yosys tools
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y iverilog yosys
+      - name: Actual FIFO to synthesizable arbiter to backing memory simulation
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P197/rtl
+          iverilog -g2012 -Wall -s a0_p197_external_word_port_arbiter_tb \
+            -o EVIDENCE/P197/rtl/p197.vvp \
+            A0-GPU/rtl/memory/a0_p195_external_pixel_write_queue.sv \
+            A0-GPU/rtl/memory/a0_p197_external_word_port_arbiter.sv \
+            A0-GPU/tests/rtl/models/a0_p196_external_word_memory_model.sv \
+            A0-GPU/tests/rtl/a0_p197_external_word_port_arbiter_tb.sv
+          timeout 300s vvp EVIDENCE/P197/rtl/p197.vvp \
+            | tee EVIDENCE/P197/rtl/p197.log
+          grep -q '^P197_SYNTH_WORD_ARBITER_PASS frame=256x256 committed=1028 concurrent_reads=200 fairness=1 stalled_hold=1 local_write_fault=1 read_fault=1 reset_retention=1 pending_discard=1 protocol_fail_closed=1$' \
+            EVIDENCE/P197/rtl/p197.log
+      - name: Synthesize the standalone production-intent arbiter
+        run: |
+          set -euo pipefail
+          yosys -Q -T -p 'read_verilog -sv A0-GPU/rtl/memory/a0_p197_external_word_port_arbiter.sv; hierarchy -check -top a0_p197_external_word_port_arbiter; synth -top a0_p197_external_word_port_arbiter; check -assert; stat' \
+            | tee EVIDENCE/P197/rtl/p197_yosys.log
+          grep -q 'Found and reported 0 problems.' EVIDENCE/P197/rtl/p197_yosys.log
+          grep -q '=== a0_p197_external_word_port_arbiter ===' EVIDENCE/P197/rtl/p197_yosys.log
+      - name: Preserve evidence including first failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p197-word-port-arbiter-evidence
+          path: EVIDENCE/P197/rtl
+          if-no-files-found: warn
