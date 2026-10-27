@@ -1,0 +1,69 @@
+name: A0-X P194 actual last-pixel raster RGB and depth
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/tests/rtl/a0_p194_final_pixel_tb.sv'
+      - 'A0-GPU/docs/P194-FINAL-PIXEL-RASTER.md'
+      - '.github/workflows/a0-p194-final-pixel-raster.yml'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv'
+      - 'A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv'
+      - 'A0-GPU/rtl/graphics/a0_p190_tiled_screen_uv.sv'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/tests/rtl/a0_p194_final_pixel_tb.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv'
+      - 'A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv'
+      - '.github/workflows/a0-p194-final-pixel-raster.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p194-final-pixel-raster-rtl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Icarus simulator
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y iverilog
+      - name: Prove real clipped far-corner triangle and Q8.8 at x=254/255
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P194/rtl
+          sources=(
+            A0-GPU/rtl/texture/a0_p156_nearest_texture.sv
+            A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv
+            A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv
+            A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv
+            A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv
+            A0-GPU/rtl/graphics/a0_p68_depth_compare.sv
+            A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv
+            A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv
+            A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv
+            A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv
+            A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv
+            A0-GPU/rtl/graphics/a0_p166_perspective_vertex_uv.sv
+            A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv
+            A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv
+            A0-GPU/rtl/graphics/a0_p190_tiled_screen_uv.sv
+            A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv
+            A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv
+          )
+          iverilog -g2012 -s a0_p194_final_pixel_tb \
+            -o EVIDENCE/P194/rtl/final_pixel.vvp \
+            "${sources[@]}" A0-GPU/tests/rtl/a0_p194_final_pixel_tb.sv
+          timeout 600s vvp EVIDENCE/P194/rtl/final_pixel.vvp \
+            | tee EVIDENCE/P194/rtl/final_pixel.log
+          grep -q '^P194_TILED_PROGRAMMED_FRAME_PASS shape=256x256 ' \
+            EVIDENCE/P194/rtl/final_pixel.log
+      - name: Preserve full-frame RTL evidence on success and failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p194-final-pixel-rtl
+          path: EVIDENCE/P194/rtl
+          if-no-files-found: warn
