@@ -1,0 +1,110 @@
+name: A0-X P192 real full 256x256 framebuffer and ECP5 resource feasibility
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/tests/rtl/a0_p192_full_frame_tb.sv'
+      - 'A0-GPU/docs/P192-FULL-256-FRAME-RESOURCE-PROBE.md'
+      - '.github/workflows/a0-p192-full-256-frame.yml'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv'
+      - 'A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv'
+      - 'A0-GPU/rtl/graphics/a0_p190_tiled_screen_uv.sv'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/tests/rtl/a0_p192_full_frame_tb.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv'
+      - 'A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv'
+      - '.github/workflows/a0-p192-full-256-frame.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p192-real-full-frame-rtl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Icarus simulator
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y iverilog
+      - name: Every clear coordinate, both global corners, and actual tiled shader
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P192/rtl
+          sources=(
+            A0-GPU/rtl/texture/a0_p156_nearest_texture.sv
+            A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv
+            A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv
+            A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv
+            A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv
+            A0-GPU/rtl/graphics/a0_p68_depth_compare.sv
+            A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv
+            A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv
+            A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv
+            A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv
+            A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv
+            A0-GPU/rtl/graphics/a0_p166_perspective_vertex_uv.sv
+            A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv
+            A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv
+            A0-GPU/rtl/graphics/a0_p190_tiled_screen_uv.sv
+            A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv
+            A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv
+          )
+          iverilog -g2012 -s a0_p192_full_frame_tb \
+            -o EVIDENCE/P192/rtl/full256.vvp \
+            "${sources[@]}" A0-GPU/tests/rtl/a0_p192_full_frame_tb.sv
+          timeout 600s vvp EVIDENCE/P192/rtl/full256.vvp \
+            | tee EVIDENCE/P192/rtl/full256.log
+          grep -q '^P192_TILED_PROGRAMMED_FRAME_PASS shape=256x256 ' \
+            EVIDENCE/P192/rtl/full256.log
+      - name: Preserve full-frame RTL evidence on success and failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p192-full256-rtl
+          path: EVIDENCE/P192/rtl
+          if-no-files-found: warn
+
+  p192-ecp5-synthesis-capacity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Lattice-targeted Yosys synthesis
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y yosys
+      - name: Report real ECP5 256x256 mapped resource demand (NOT a route)
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P192/area
+          yosys -p "read_verilog -sv A0-GPU/rtl/texture/a0_p156_nearest_texture.sv A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv A0-GPU/rtl/graphics/a0_p166_perspective_vertex_uv.sv A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv A0-GPU/rtl/graphics/a0_p190_tiled_screen_uv.sv A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv; chparam -set FRAME_WIDTH 256 -set FRAME_HEIGHT 256 -set TILED_SCREEN_UV 1 a0_p175_scaled_programmed_command_top; hierarchy -check -top a0_p175_scaled_programmed_command_top; synth_ecp5 -top a0_p175_scaled_programmed_command_top -json EVIDENCE/P192/area/netlist.json; check -assert" \
+            2>&1 | tee EVIDENCE/P192/area/yosys.log
+          python3 - <<'PY'
+          import collections,json
+          from pathlib import Path
+          p=Path('EVIDENCE/P192/area')
+          m=json.loads((p/'netlist.json').read_text())['modules']['a0_p175_scaled_programmed_command_top']
+          pins=sum(len(v['bits']) for v in m['ports'].values())
+          c=collections.Counter(v['type'] for v in m['cells'].values())
+          bram=c.get('DP16KD',0)
+          dsp=c.get('MULT18X18D',0)
+          lut=c.get('LUT4',0)
+          ff=c.get('TRELLIS_FF',0)
+          print('P192_256X256_ECP5_SYNTH_REPORT pins=%d pixels=65536 BRAM=%d DSP=%d LUT4=%d FF=%d'%(pins,bram,dsp,lut,ff))
+          assert pins==77,('P192 host IO changed',pins)
+          assert 0<bram<=208,('P192 85K BRAM physical capacity not proven',bram)
+          assert 0<dsp<=72,('P192 shader DSP absent or overfull',dsp)
+          assert 0<lut<=83640 and 0<ff<9195,('P192 mapped logic resource overflow',lut,ff))
+          assert not any(k.startswith('$') or k.startswith('a0_') or 'LATCH' in k.upper() for k in c),c
+          PY
+      - name: Preserve synthesis netlist and logs even when red
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p192-ecp5-synthesis-feasibility
+          path: EVIDENCE/P192/area
+          if-no-files-found: warn
