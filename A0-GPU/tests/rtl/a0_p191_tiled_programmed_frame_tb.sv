@@ -82,6 +82,15 @@ module a0_p191_tiled_programmed_frame_tb #(
     begin
       wr(15,{16'(y),16'(x)});
       wr(16,32'd3);
+      if (x==BASE_X+1 && y==BASE_Y+1)
+        $display("P191_HOST_TRACE xy=%0d,%0d read_xy=%0d,%0d cache=%h/%h cached=%b hosttag=%b storage_rsp=%b/%h read0=%b init=%b bank1_read=%h core_rsp=%b/%h",
+          x,y,dut.read_x_q,dut.read_y_q,dut.cached_rgb_q,dut.cached_z_q,
+          dut.pixel_cached_q,dut.core.framebuffer.host_tag_q,
+          dut.core.framebuffer.mem0_rsp_valid,dut.core.framebuffer.mem0_rsp_data,
+          dut.core.framebuffer.banks.storage.read0_q,
+          dut.core.framebuffer.banks.storage.read0_initialized_q,
+          dut.core.framebuffer.banks.storage.bank1_read_q,
+          dut.core_host_valid,dut.core_host_rgb);
       rd(18,rgb);rd(19,z);
       if(rgb[23:0]!==expected_rgb || z[23:0]!==expected_z)
         $fatal(1,"P191 wrong global pixel %0d,%0d got %h/%h expected %h/%h",
