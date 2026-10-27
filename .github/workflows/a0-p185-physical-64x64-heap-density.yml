@@ -1,0 +1,94 @@
+name: A0-X P185 controlled heap density placement experiment for real 64x64 ECP5
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv'
+      - 'A0-GPU/rtl/graphics/a0_p68_depth_compare.sv'
+      - 'A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv'
+      - 'A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv'
+      - 'A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv'
+      - 'A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv'
+      - 'A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv'
+      - 'A0-GPU/rtl/graphics/a0_p166_perspective_vertex_uv.sv'
+      - 'A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv'
+      - 'A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv'
+      - 'A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv'
+      - 'A0-GPU/rtl/texture/a0_p156_nearest_texture.sv'
+      - 'A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv'
+      - '.github/workflows/a0-p185-physical-64x64-heap-density.yml'
+      - 'A0-GPU/docs/P185-PHYSICAL-64X64-HEAP-DENSITY.md'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv'
+      - 'A0-GPU/rtl/graphics/a0_p68_depth_compare.sv'
+      - 'A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv'
+      - 'A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv'
+      - 'A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv'
+      - 'A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv'
+      - 'A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv'
+      - 'A0-GPU/rtl/graphics/a0_p166_perspective_vertex_uv.sv'
+      - 'A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv'
+      - 'A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv'
+      - 'A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv'
+      - 'A0-GPU/rtl/texture/a0_p156_nearest_texture.sv'
+      - 'A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv'
+      - '.github/workflows/a0-p185-physical-64x64-heap-density.yml'
+      - 'A0-GPU/docs/P185-PHYSICAL-64X64-HEAP-DENSITY.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p185-routed-64x64-ecp5:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual ECP5 synthesis and place-route tools
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y yosys nextpnr-ecp5
+      - name: Prove real BRAM and DSP inside full programmable fragment host top
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P185/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/texture/a0_p156_nearest_texture.sv A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv A0-GPU/rtl/graphics/a0_p166_perspective_vertex_uv.sv A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv; chparam -set FRAME_WIDTH 64 -set FRAME_HEIGHT 64 a0_p175_scaled_programmed_command_top; hierarchy -check -top a0_p175_scaled_programmed_command_top; synth_ecp5 -top a0_p175_scaled_programmed_command_top -json EVIDENCE/P185/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P185/route/yosys.log
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P185/route/netlist.json \
+            --textcfg EVIDENCE/P185/route/route.config \
+            --report EVIDENCE/P185/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            --placer heap --placer-heap-beta 0.97 \
+            2>&1 | tee EVIDENCE/P185/route/nextpnr.log
+          python3 - <<'PY'
+          import collections,json
+          from pathlib import Path
+          p=Path('EVIDENCE/P185/route')
+          m=json.loads((p/'netlist.json').read_text())['modules']['a0_p175_scaled_programmed_command_top']
+          pins=sum(len(v['bits']) for v in m['ports'].values())
+          c=collections.Counter(v['type'] for v in m['cells'].values())
+          assert pins==77,('full host control bus must fit 77 real IO pins',pins)
+          assert 7<=c.get('DP16KD',0)<=32,('P185 64x64 framebuffer BRAM budget 7..32',c)
+          assert c.get('MULT18X18D',0)>=40,('P162 texture or ALU DSP missing',c)
+          assert c.get('MULT18X18D',0)<=72,('P185 exceeded 72-DSP shader budget',c)
+          assert not any(k.startswith('$') or k.startswith('a0_') or 'LATCH' in k.upper() for k in c),c
+          fmax=json.loads((p/'route.json').read_text())['fmax']
+          assert fmax and all(v['achieved']>=5 for v in fmax.values()),('P185 64x64 route below 5MHz research clock',fmax)
+          assert all(v.get('achieved',0)>0 for v in fmax.values()),('P185 missing actual placed-route clock',fmax)
+          assert 0<c.get('LUT4',0)<=83640 and 0<c.get('TRELLIS_FF',0)<=83640,('P185 missing or overfull Yosys LUT4/FF evidence',c)
+          achieved_mhz=min(v['achieved'] for v in fmax.values())
+          print('P185_REAL_64X64_ECP5_ROUTE_PASS pins=%d pixels=4096 BRAM=%d DSP=%d LUT4=%d FF=%d MHz=%.2f'%(pins,c['DP16KD'],c['MULT18X18D'],c['LUT4'],c['TRELLIS_FF'],achieved_mhz))
+          PY
+      - name: Preserve routed bitstream and mapped evidence on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p185-real-64x64-programmed-raster-ecp5
+          path: EVIDENCE/P185/route
+          if-no-files-found: warn
