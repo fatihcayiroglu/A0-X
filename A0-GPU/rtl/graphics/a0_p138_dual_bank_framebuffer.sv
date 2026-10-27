@@ -172,7 +172,7 @@ module a0_p138_dual_bank_framebuffer #(
             PIXELS != FRAME_WIDTH*FRAME_HEIGHT ||
             PIXELS < 2 || PIXELS > 65536 ||
             ADDR_BITS < $clog2(PIXELS) || BANK_DEPTH < (PIXELS+1)/2 ||
-            (FULL_CLEAR_GUARD && PIXELS < 4096))
+            (FULL_CLEAR_GUARD && PIXELS < 2048))
             $fatal(1,"P138 unsupported scratchpad geometry");
     end
 endmodule
