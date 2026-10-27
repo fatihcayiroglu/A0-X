@@ -1,0 +1,72 @@
+name: A0-X P193 actual full 256x256 ECP5 placement and timing proof
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/a0-p193-full256-real-route.yml'
+      - 'A0-GPU/docs/P193-FULL256-PHYSICAL-ROUTE.md'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv'
+      - 'A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv'
+      - 'A0-GPU/rtl/graphics/a0_p190_tiled_screen_uv.sv'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/a0-p193-full256-real-route.yml'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv'
+      - 'A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p193-route-full-256x256-ecp5:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Yosys and nextpnr ECP5
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y yosys nextpnr-ecp5
+      - name: Actual full framebuffer route, no synthesis-only shortcut
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P193/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/texture/a0_p156_nearest_texture.sv A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv A0-GPU/rtl/graphics/a0_p166_perspective_vertex_uv.sv A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv A0-GPU/rtl/graphics/a0_p190_tiled_screen_uv.sv A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv; chparam -set FRAME_WIDTH 256 -set FRAME_HEIGHT 256 -set TILED_SCREEN_UV 1 a0_p175_scaled_programmed_command_top; hierarchy -check -top a0_p175_scaled_programmed_command_top; synth_ecp5 -top a0_p175_scaled_programmed_command_top -json EVIDENCE/P193/route/netlist.json; check -assert" \
+            2>&1 | tee EVIDENCE/P193/route/yosys.log
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P193/route/netlist.json \
+            --textcfg EVIDENCE/P193/route/route.config \
+            --report EVIDENCE/P193/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P193/route/nextpnr.log
+          python3 - <<'PY'
+          import collections,json
+          from pathlib import Path
+          p=Path('EVIDENCE/P193/route')
+          m=json.loads((p/'netlist.json').read_text())['modules']['a0_p175_scaled_programmed_command_top']
+          pins=sum(len(v['bits']) for v in m['ports'].values())
+          c=collections.Counter(v['type'] for v in m['cells'].values())
+          bram=c.get('DP16KD',0)
+          dsp=c.get('MULT18X18D',0)
+          lut=c.get('LUT4',0)
+          ff=c.get('TRELLIS_FF',0)
+          assert pins==77,('P193 host IO regression',pins)
+          assert 0<bram<=208,('P193 physical BRAM overflow',bram)
+          assert 0<dsp<=72,('P193 physical DSP invalid',dsp)
+          assert 0<lut<=83640,('P193 LUT4 overfull',lut)
+          assert 0<ff<9195,('P193 FF overfull',ff)
+          assert not any(k.startswith('$') or k.startswith('a0_') or 'LATCH' in k.upper() for k in c),c
+          route=json.loads((p/'route.json').read_text())
+          fmax=route['fmax']
+          assert fmax and all(v.get('achieved',0)>=30 for v in fmax.values()),('P193 routed 30MHz floor missed',fmax)
+          mhz=min(v['achieved'] for v in fmax.values())
+          print('P193_REAL_256X256_ECP5_ROUTE_PASS pins=%d pixels=65536 BRAM=%d DSP=%d LUT4=%d FF=%d MHz=%.2f'%(pins,bram,dsp,lut,ff,mhz))
+          PY
+      - name: Preserve real routed evidence even on first failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p193-real-256x256-ecp5
+          path: EVIDENCE/P193/route
+          if-no-files-found: warn
