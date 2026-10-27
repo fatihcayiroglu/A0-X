@@ -2,7 +2,8 @@
 // P167: programmable TEX/ALU, affine + perspective UV, real raster and
 // framebuffer behind one 77-bit research host bus (not PCIe/AXI).
 module a0_p175_scaled_programmed_command_top #(
-  parameter integer FRAME_WIDTH=4,FRAME_HEIGHT=4
+  parameter integer FRAME_WIDTH=4,FRAME_HEIGHT=4,
+  parameter bit TILED_SCREEN_UV=1'b0
 )(
   input logic clk,rst_n,
   input logic req_valid,req_write,
@@ -63,7 +64,8 @@ module a0_p175_scaled_programmed_command_top #(
   wire host_launch=host_request && core_host_ready;
 
   a0_p175_scaled_programmed_fragment_core #(
-    .FRAME_WIDTH(FRAME_WIDTH),.FRAME_HEIGHT(FRAME_HEIGHT)
+    .FRAME_WIDTH(FRAME_WIDTH),.FRAME_HEIGHT(FRAME_HEIGHT),
+    .TILED_SCREEN_UV(TILED_SCREEN_UV)
   ) core(
     .clk(clk),.rst_n(rst_n),
     .seed_write_valid(seed_request),.seed_write_ready(core_seed_ready),

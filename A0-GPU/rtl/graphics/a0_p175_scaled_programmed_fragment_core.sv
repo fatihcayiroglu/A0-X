@@ -5,7 +5,8 @@
 // screen Q8.8 texel coordinates, R1..R7 are user-defined draw seeds.
 module a0_p175_scaled_programmed_fragment_core #(
   parameter integer FRAME_WIDTH=4,FRAME_HEIGHT=4,
-  parameter integer PIXELS=FRAME_WIDTH*FRAME_HEIGHT
+  parameter integer PIXELS=FRAME_WIDTH*FRAME_HEIGHT,
+  parameter bit TILED_SCREEN_UV=1'b0
 )(
   input logic clk,rst_n,
   input logic seed_write_valid,
@@ -92,34 +93,57 @@ module a0_p175_scaled_programmed_fragment_core #(
   wire mem_host_valid,mem_host_error;
   wire [23:0] mem_host_color,mem_host_depth;
   wire signed [15:0] uv_pixel_x=px_q,uv_pixel_y=py_q;
-  wire signed [15:0] tex_u=uv_mode_q!=0 ? interpolated_u_q :
-    ($signed(px_q <<< 8)+uv_u_q);
-  wire signed [15:0] tex_v=uv_mode_q!=0 ? interpolated_v_q :
-    ($signed(py_q <<< 8)+uv_v_q);
-  wire [31:0] shader_seed=seed_ptr_q==0 ? {tex_v,tex_u} : seed_regs[seed_ptr_q];
-  // P175: for the legacy screen-offset UV path, accept R0 at the same
-  // raster-pixel boundary as px_q/py_q. PREP_REG then begins at R1, saving
-  // one sequential shader-seed cycle per fragment. Affine/perspective modes
-  // still wait for their independently checked interpolator response.
-  // Q8.8 screen coordinates have zero fractional bits. The geometry
-  // contract bounds raster_x/y to 0..127; only the signed INTEGER byte
-  // needs an addition. Offset fractional bits propagate unchanged.
-  // Keep one extra integer sign bit to reject overflow before narrowing.
-  // This nine-bit operation is equivalent to the former 17-bit sum for
-  // every supported 1..128 framebuffer dimension.
-  wire signed [8:0] preload_tex_u_integer_wide=
-    $signed({2'b00,raster_x[6:0]})+$signed({uv_u_q[15],uv_u_q[15:8]});
-  wire signed [8:0] preload_tex_v_integer_wide=
-    $signed({2'b00,raster_y[6:0]})+$signed({uv_v_q[15],uv_v_q[15:8]});
-  wire uv_preload_overflow=
-    (preload_tex_u_integer_wide[8]!=preload_tex_u_integer_wide[7]) ||
-    (preload_tex_v_integer_wide[8]!=preload_tex_v_integer_wide[7]);
+  wire signed [15:0] tex_u,tex_v,preload_tex_u,preload_tex_v;
+  wire uv_preload_overflow;
+  // P191: compile-time opt-in. Default 1..128 geometry preserves the
+  // exact original nine-bit preload and registered R0 fallback topology.
+  // In tile mode shader UV is local; framebuffer XY remains global.
+  generate
+    if(TILED_SCREEN_UV)begin: tiled_screen_uv
+      wire signed [15:0] delayed_u,delayed_v;
+      wire delayed_invalid;
+      a0_p190_tiled_screen_uv uv_raster_converter(
+        .pixel_x(raster_x),.pixel_y(raster_y),
+        .offset_u(uv_u_q),.offset_v(uv_v_q),
+        .tile_enable(1'b1),
+        .tex_u(preload_tex_u),.tex_v(preload_tex_v),
+        .invalid(uv_preload_overflow)
+      );
+      a0_p190_tiled_screen_uv uv_registered_converter(
+        .pixel_x(px_q),.pixel_y(py_q),
+        .offset_u(uv_u_q),.offset_v(uv_v_q),
+        .tile_enable(1'b1),
+        .tex_u(delayed_u),.tex_v(delayed_v),
+        .invalid(delayed_invalid)
+      );
+      assign tex_u=uv_mode_q!=0 ? interpolated_u_q :
+        (delayed_invalid ? 16'sd0 : delayed_u);
+      assign tex_v=uv_mode_q!=0 ? interpolated_v_q :
+        (delayed_invalid ? 16'sd0 : delayed_v);
+    end else begin: legacy_screen_uv
+      wire signed [8:0] preload_tex_u_integer_wide=
+        $signed({2'b00,raster_x[6:0]})+
+        $signed({uv_u_q[15],uv_u_q[15:8]});
+      wire signed [8:0] preload_tex_v_integer_wide=
+        $signed({2'b00,raster_y[6:0]})+
+        $signed({uv_v_q[15],uv_v_q[15:8]});
+      assign uv_preload_overflow=
+        (preload_tex_u_integer_wide[8]!=preload_tex_u_integer_wide[7]) ||
+        (preload_tex_v_integer_wide[8]!=preload_tex_v_integer_wide[7]);
+      assign preload_tex_u=
+        {preload_tex_u_integer_wide[7:0],uv_u_q[7:0]};
+      assign preload_tex_v=
+        {preload_tex_v_integer_wide[7:0],uv_v_q[7:0]};
+      assign tex_u=uv_mode_q!=0 ? interpolated_u_q :
+        ($signed(px_q <<< 8)+uv_u_q);
+      assign tex_v=uv_mode_q!=0 ? interpolated_v_q :
+        ($signed(py_q <<< 8)+uv_v_q);
+    end
+  endgenerate
+  wire [31:0] shader_seed=seed_ptr_q==0 ?
+    {tex_v,tex_u} : seed_regs[seed_ptr_q];
   wire preload_shader_uv=state_q==SCAN && raster_pixel_valid &&
     uv_mode_q==2'd0 && !uv_preload_overflow && shader_ready;
-  wire signed [15:0] preload_tex_u=
-    {preload_tex_u_integer_wide[7:0],uv_u_q[7:0]};
-  wire signed [15:0] preload_tex_v=
-    {preload_tex_v_integer_wide[7:0],uv_v_q[7:0]};
   wire [31:0] shader_write_data=preload_shader_uv ?
     {preload_tex_v,preload_tex_u} : shader_seed;
   wire clear_op=state_q==CLEAR_ISSUE;
@@ -363,8 +387,10 @@ module a0_p175_scaled_programmed_fragment_core #(
     end
   end
   initial begin
-    if(FRAME_WIDTH<1 || FRAME_HEIGHT<1 || FRAME_WIDTH>128 ||
-       FRAME_HEIGHT>128 || PIXELS!=FRAME_WIDTH*FRAME_HEIGHT || PIXELS<2)
+    if(FRAME_WIDTH<1 || FRAME_HEIGHT<1 ||
+       (TILED_SCREEN_UV ? (FRAME_WIDTH>256 || FRAME_HEIGHT>256) :
+         (FRAME_WIDTH>128 || FRAME_HEIGHT>128)) ||
+       PIXELS!=FRAME_WIDTH*FRAME_HEIGHT || PIXELS<2 || PIXELS>65536)
       $fatal(1,"P163 framebuffer unsupported geometry");
   end
 endmodule
