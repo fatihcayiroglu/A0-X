@@ -41,7 +41,8 @@ jobs:
           set -euo pipefail
           yosys -Q -T -p 'read_verilog -sv A0-GPU/rtl/memory/a0_p195_external_pixel_write_queue.sv; hierarchy -check -top a0_p195_external_pixel_write_queue; synth -top a0_p195_external_pixel_write_queue; check -assert; stat' \
             | tee EVIDENCE/P195/rtl/p195_yosys.log
-          grep -q 'End of script.' EVIDENCE/P195/rtl/p195_yosys.log
+          grep -q 'Found and reported 0 problems.' EVIDENCE/P195/rtl/p195_yosys.log
+          grep -q '=== a0_p195_external_pixel_write_queue ===' EVIDENCE/P195/rtl/p195_yosys.log
       - name: Preserve logs whether successful or failed
         if: always()
         uses: actions/upload-artifact@v4
