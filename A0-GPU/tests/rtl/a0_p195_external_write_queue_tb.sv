@@ -112,12 +112,14 @@ module a0_p195_external_write_queue_tb;
     // on exactly the same beat as a full-queue downstream pop.
     @(negedge clk);in_valid=1;in_x=16'd128;in_y=16'd128;
     in_pixel=48'ha1a2a3a4a5a6;
+    #1; // Settle combinational ready after invalid->valid XY change.
     repeat(5)begin
       if(in_ready!==0)$fatal(1,"P195 full queue did not backpressure");
       @(posedge clk);
       @(negedge clk);
     end
     out_ready=1;
+    #1; // Settle combinational ready after downstream releases stall.
     if(!in_ready || !out_valid)
       $fatal(1,"P195 full pop+push did not expose capacity");
     @(posedge clk);
