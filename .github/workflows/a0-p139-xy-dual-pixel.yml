@@ -2,6 +2,7 @@ name: A0-X P139 XY pixel bank-port RTL and ECP5 BRAM
 on:
   pull_request:
     paths:
+      - 'A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv'
       - 'A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv'
       - 'A0-GPU/tests/rtl/a0_p139_xy_dual_pixel_port_tb.sv'
       - 'A0-GPU/docs/P139-XY-DUAL-PIXEL-PORT.md'
@@ -9,6 +10,7 @@ on:
   push:
     branches: [main]
     paths:
+      - 'A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv'
       - 'A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv'
       - 'A0-GPU/tests/rtl/a0_p139_xy_dual_pixel_port_tb.sv'
       - '.github/workflows/a0-p139-xy-dual-pixel.yml'
