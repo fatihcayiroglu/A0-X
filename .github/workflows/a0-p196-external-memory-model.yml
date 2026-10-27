@@ -1,0 +1,49 @@
+name: A0-X P196 external memory model ordered readback
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/tests/rtl/models/a0_p196_external_word_memory_model.sv'
+      - 'A0-GPU/tests/rtl/a0_p196_external_memory_readback_tb.sv'
+      - 'A0-GPU/rtl/memory/a0_p195_external_pixel_write_queue.sv'
+      - 'A0-GPU/docs/P196-EXTERNAL-MEMORY-MODEL.md'
+      - '.github/workflows/a0-p196-external-memory-model.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/tests/rtl/models/a0_p196_external_word_memory_model.sv'
+      - 'A0-GPU/tests/rtl/a0_p196_external_memory_readback_tb.sv'
+      - 'A0-GPU/rtl/memory/a0_p195_external_pixel_write_queue.sv'
+      - '.github/workflows/a0-p196-external-memory-model.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p196-external-memory-model:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual Icarus RTL simulator
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y iverilog
+      - name: Full FIFO-to-memory ordered writes, arbitration, readback, reset
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P196/rtl
+          iverilog -g2012 -Wall -s a0_p196_external_memory_readback_tb \
+            -o EVIDENCE/P196/rtl/memory_readback.vvp \
+            A0-GPU/rtl/memory/a0_p195_external_pixel_write_queue.sv \
+            A0-GPU/tests/rtl/models/a0_p196_external_word_memory_model.sv \
+            A0-GPU/tests/rtl/a0_p196_external_memory_readback_tb.sv
+          timeout 300s vvp EVIDENCE/P196/rtl/memory_readback.vvp \
+            | tee EVIDENCE/P196/rtl/memory_readback.log
+          grep -q '^P196_EXTERNAL_MEMORY_MODEL_PASS frame=256x256 committed=1028 concurrent_reads=200 invalid_writes=2 reset_retention=1 pending_discard=1 arbitration=1$' \
+            EVIDENCE/P196/rtl/memory_readback.log
+      - name: Preserve exact RTL evidence on success or failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p196-memory-model-readback
+          path: EVIDENCE/P196/rtl
+          if-no-files-found: warn
