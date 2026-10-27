@@ -195,9 +195,12 @@ module a0_p175_scaled_programmed_fragment_core #(
     .done(shader_done),.fault(shader_fault),
     .retired_count(shader_retired),.texture_retired_count(shader_tex_count)
   );
+  // This core blocks all reads/draws until its complete per-pixel clear
+  // returns success. Only large shapes replace resettable validity bits
+  // with a single frame-initialized guard; all standalone modules default off.
   a0_p144_dual_depth_blend_rmw #(.FRAME_WIDTH(FRAME_WIDTH),
-     .FRAME_HEIGHT(FRAME_HEIGHT)) framebuffer(
-    .clk(clk),.rst_n(rst_n),
+     .FRAME_HEIGHT(FRAME_HEIGHT),.FULL_CLEAR_GUARD(PIXELS>=4096)) framebuffer(
+    .clk(clk),.rst_n(rst_n),.frame_initialized(initialized_q),
     .op_valid(clear_op || pixel_op),.op_ready(rmw_ready),
     .op_clear(clear_op),
     .lane0_valid(1'b1),.lane1_valid(1'b0),
