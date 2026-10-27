@@ -1,0 +1,51 @@
+name: A0-X P190 tiled Q8.8 coordinate contract
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p190_tiled_screen_uv.sv'
+      - 'A0-GPU/tests/rtl/a0_p190_tiled_screen_uv_tb.sv'
+      - 'A0-GPU/docs/P190-TILED-SCREEN-COORDINATES.md'
+      - '.github/workflows/a0-p190-tiled-screen-uv.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_p190_tiled_screen_uv.sv'
+      - 'A0-GPU/tests/rtl/a0_p190_tiled_screen_uv_tb.sv'
+      - 'A0-GPU/docs/P190-TILED-SCREEN-COORDINATES.md'
+      - '.github/workflows/a0-p190-tiled-screen-uv.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p190-exact-rtl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Icarus and Yosys tools
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y iverilog yosys
+      - name: Real tiled coordinate math and fault-contract simulation
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P190
+          iverilog -g2012 -s a0_p190_tiled_screen_uv_tb \
+            -o EVIDENCE/P190/tile.vvp \
+            A0-GPU/rtl/graphics/a0_p190_tiled_screen_uv.sv \
+            A0-GPU/tests/rtl/a0_p190_tiled_screen_uv_tb.sv
+          timeout 60s vvp EVIDENCE/P190/tile.vvp | tee EVIDENCE/P190/rtl.log
+          grep -q '^P190_TILED_SCREEN_UV_PASS cases=1545 ' EVIDENCE/P190/rtl.log
+      - name: Real Yosys synthesizability and no missing/latch cells
+        run: |
+          set -euo pipefail
+          yosys -p "read_verilog -sv A0-GPU/rtl/graphics/a0_p190_tiled_screen_uv.sv; hierarchy -check -top a0_p190_tiled_screen_uv; proc; opt; check -assert; stat" \
+            2>&1 | tee EVIDENCE/P190/yosys.log
+          if grep -Ei 'warning.*(latch|unresolved)' EVIDENCE/P190/yosys.log; then exit 1; fi
+      - name: Preserve real verification outputs even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p190-tiled-screen-uv-rtl-yosys
+          path: EVIDENCE/P190
+          if-no-files-found: warn
