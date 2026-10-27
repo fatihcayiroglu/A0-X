@@ -37,7 +37,7 @@ module a0_p175_scaled_programmed_fragment_core #(
   input logic [4:0] program_length,
   input logic [2:0] output_reg,
   output logic initialized,busy,fault,
-  output logic [15:0] shaded_pixels,shader_instructions,texture_operations,
+  output logic [31:0] shaded_pixels,shader_instructions,texture_operations,
   output logic [23:0] last_shaded_rgb,
   input logic host_read_valid,
   output logic host_read_ready,
@@ -101,10 +101,25 @@ module a0_p175_scaled_programmed_fragment_core #(
   // raster-pixel boundary as px_q/py_q. PREP_REG then begins at R1, saving
   // one sequential shader-seed cycle per fragment. Affine/perspective modes
   // still wait for their independently checked interpolator response.
+  // Q8.8 screen coordinates have zero fractional bits. The geometry
+  // contract bounds raster_x/y to 0..127; only the signed INTEGER byte
+  // needs an addition. Offset fractional bits propagate unchanged.
+  // Keep one extra integer sign bit to reject overflow before narrowing.
+  // This nine-bit operation is equivalent to the former 17-bit sum for
+  // every supported 1..128 framebuffer dimension.
+  wire signed [8:0] preload_tex_u_integer_wide=
+    $signed({2'b00,raster_x[6:0]})+$signed({uv_u_q[15],uv_u_q[15:8]});
+  wire signed [8:0] preload_tex_v_integer_wide=
+    $signed({2'b00,raster_y[6:0]})+$signed({uv_v_q[15],uv_v_q[15:8]});
+  wire uv_preload_overflow=
+    (preload_tex_u_integer_wide[8]!=preload_tex_u_integer_wide[7]) ||
+    (preload_tex_v_integer_wide[8]!=preload_tex_v_integer_wide[7]);
   wire preload_shader_uv=state_q==SCAN && raster_pixel_valid &&
-    uv_mode_q==2'd0 && shader_ready;
-  wire signed [15:0] preload_tex_u=$signed(raster_x <<< 8)+uv_u_q;
-  wire signed [15:0] preload_tex_v=$signed(raster_y <<< 8)+uv_v_q;
+    uv_mode_q==2'd0 && !uv_preload_overflow && shader_ready;
+  wire signed [15:0] preload_tex_u=
+    {preload_tex_u_integer_wide[7:0],uv_u_q[7:0]};
+  wire signed [15:0] preload_tex_v=
+    {preload_tex_v_integer_wide[7:0],uv_v_q[7:0]};
   wire [31:0] shader_write_data=preload_shader_uv ?
     {preload_tex_v,preload_tex_u} : shader_seed;
   wire clear_op=state_q==CLEAR_ISSUE;
@@ -278,9 +293,13 @@ module a0_p175_scaled_programmed_fragment_core #(
         SCAN:begin
           if(raster_done)begin tri_done<=1;state_q<=IDLE;end
           else if(raster_pixel_valid)begin
-            px_q<=raster_x;py_q<=raster_y;
-            seed_ptr_q<=preload_shader_uv ? 3'd1 : 3'd0;
-            state_q<=uv_mode_q!=0 ? UV_ISSUE : PREP_REG;
+            if(uv_mode_q==2'd0 && uv_preload_overflow)begin
+              fault_q<=1;state_q<=FAILED;
+            end else begin
+              px_q<=raster_x;py_q<=raster_y;
+              seed_ptr_q<=preload_shader_uv ? 3'd1 : 3'd0;
+              state_q<=uv_mode_q!=0 ? UV_ISSUE : PREP_REG;
+            end
           end
         end
         UV_ISSUE:if(uv_req_ready)begin
@@ -321,8 +340,8 @@ module a0_p175_scaled_programmed_fragment_core #(
               fb_x_q<=px_q;fb_y_q<=py_q;
               color_q<=shader_data[23:0];
               last_shaded_rgb<=shader_data[23:0];
-              shader_instructions<=shader_instructions+16'(shader_retired);
-              texture_operations<=texture_operations+16'(shader_tex_count);
+              shader_instructions<=shader_instructions+32'(shader_retired);
+              texture_operations<=texture_operations+32'(shader_tex_count);
               state_q<=WRITE_PIXEL;
             end
           end
@@ -331,7 +350,7 @@ module a0_p175_scaled_programmed_fragment_core #(
         WAIT_WRITE:if(rmw_rsp_valid)begin
           if(rmw_rsp_error)begin fault_q<=1;state_q<=FAILED;end
           else begin
-            shaded_pixels<=shaded_pixels+16'd1;
+            shaded_pixels<=shaded_pixels+32'd1;
             state_q<=SCAN;
           end
         end

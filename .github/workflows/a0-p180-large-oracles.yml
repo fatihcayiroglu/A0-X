@@ -1,0 +1,124 @@
+name: A0-X P180 independent 128x128 programmed framebuffer and throughput oracles
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/tests/rtl/a0_p172_scaled_programmed_fragment_p102_tb.sv'
+      - 'A0-GPU/docs/P180-128X128-ORACLES.md'
+      - '.github/workflows/a0-p180-large-oracles.yml'
+      - 'A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv'
+      - 'A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv'
+      - 'A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv'
+      - 'A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv'
+      - 'A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/tests/rtl/a0_p172_scaled_programmed_fragment_p102_tb.sv'
+      - '.github/workflows/a0-p180-large-oracles.yml'
+      - 'A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv'
+      - 'A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv'
+      - 'A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv'
+      - 'A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv'
+      - 'A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p180-large-host-oracle-cycles:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real RTL simulator
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y iverilog
+      - name: Check independent full-frame color/depth and measured draw cycles at 128x64, 64x128, 128x128
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P180/rtl
+          for shape in '128 64' '64 128' '128 128'; do
+            read -r w h <<< "$shape"
+            id="${w}x${h}"
+          iverilog -g2012 -s a0_p172_scaled_programmed_fragment_p102_tb \
+            -Pa0_p172_scaled_programmed_fragment_p102_tb.W="$w" \
+            -Pa0_p172_scaled_programmed_fragment_p102_tb.H="$h" \
+            -o EVIDENCE/P180/rtl/$id.vvp \
+            A0-GPU/rtl/texture/a0_p156_nearest_texture.sv \
+            A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv \
+            A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv \
+            A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv \
+            A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv \
+            A0-GPU/rtl/graphics/a0_p59_scissor_coverage.sv \
+            A0-GPU/rtl/graphics/a0_p68_depth_compare.sv \
+            A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv \
+            A0-GPU/rtl/graphics/a0_triangle_scissor_depth_blend_p102.sv \
+            A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv \
+            A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv \
+            A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv \
+            A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv \
+            A0-GPU/rtl/graphics/a0_p166_perspective_vertex_uv.sv \
+            A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv \
+            A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv \
+            A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv \
+            A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv \
+            A0-GPU/tests/rtl/a0_p172_scaled_programmed_fragment_p102_tb.sv \
+            2>&1 | tee "EVIDENCE/P180/rtl/$id-compile.log"
+            timeout 240s vvp "EVIDENCE/P180/rtl/$id.vvp" | tee "EVIDENCE/P180/rtl/$id.log"
+            grep -q "^P172_SCALED_PROGRAMMED_P102_PASS shape=$id " "EVIDENCE/P180/rtl/$id.log"
+            grep -q "^P173_DRAW_TIMING_PASS shape=$id " "EVIDENCE/P180/rtl/$id.log"
+          done
+      - name: Enforce independent P102 pixel equality and exact scaled cycle ceilings
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          first, second = [], []
+          observed, covered = 0, 0
+          for w, h in ((128, 64), (64, 128), (128, 128)):
+              log = (Path('EVIDENCE/P180/rtl') / f'{w}x{h}.log').read_text()
+              o = re.findall(
+                  r'^P172_SCALED_PROGRAMMED_P102_PASS shape=(\d+)x(\d+) txns=(\d+) tex_writes=(\d+) insn_writes=(\d+) seed_writes=(\d+) clears=(\d+) draws=(\d+) full_frame_pixels=(\d+) covered=(\d+) host_rejections=(\d+) busy_denials=(\d+) missing_faults=(\d+)$',
+                  log, re.M)
+              m = re.findall(
+                  r'^P173_DRAW_TIMING_PASS shape=(\d+)x(\d+) first_cycles=(\d+) second_cycles=(\d+) pixels_each=(\d+)$',
+                  log, re.M)
+              assert len(o) == len(m) == 1, (w, h, log[-800:])
+              overflow = re.findall(
+                  r'^P180_UV_OVERFLOW_FAIL_CLOSED_PASS shape=(\d+)x(\d+) status=([0-9a-fA-F]+)$',
+                  log, re.M)
+              assert len(overflow) == (1 if h >= 128 else 0), (w, h, overflow)
+              if h >= 128:
+                  assert tuple(map(int, overflow[0][:2])) == (w, h), overflow
+              a = list(map(int, o[0]))
+              b = list(map(int, m[0]))
+              n = w * h
+              assert a[:2] == [w, h] and a[6:10] == [3, 2, 5*n, 2*n], a
+              assert a[3] == 256 and a[10] >= 8 and a[11] == a[12] == 1, a
+              assert b[:2] == [w, h] and b[4] == n, b
+              assert all(n < cycles < 500*n for cycles in b[2:4]), b
+              assert b[2] <= 52*n+2 and b[3] <= 35*n+2, (w, h, b, 'P174 regression')
+              assert b[2] <= 51*n+2 and b[3] <= 34*n+2, (w, h, b, 'P175 scaled regression')
+              first.append(b[2])
+              second.append(b[3])
+              observed += a[8]
+              covered += a[9]
+              print(f'P180_FULL_FRAME_ORACLE_PASS shape={w}x{h} pixel_reads={a[8]} shaded_fragments={a[9]} first_cycles={b[2]} second_cycles={b[3]}')
+          assert first[0] == first[1] < first[2], first
+          assert second[0] == second[1] < second[2], second
+          assert observed == 163840 and covered == 65536, (observed, covered)
+          print(f'P180_LARGE_FRAME_ORACLES_PASS shapes=3 oracle_pixels={observed} draw_pixels={covered} size=128x128')
+          print('P180_SCALED_CYCLE_RATCHET_PASS shapes=3 first_budget=51*pixels+2 second_budget=34*pixels+2')
+          PY
+      - name: Preserve raw RTL measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p180-large-frame-oracle-evidence
+          path: EVIDENCE/P180/rtl
+          if-no-files-found: warn

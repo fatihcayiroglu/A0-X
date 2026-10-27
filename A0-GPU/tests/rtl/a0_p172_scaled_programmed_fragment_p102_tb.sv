@@ -339,6 +339,9 @@ module a0_p172_scaled_programmed_fragment_p102_tb #(
     wr(7,{16'd0,8'd255,4'd0,1'b0,1'b1,2'd1});
 
     shader_case=0;repeat_mode=0;
+    // Legal full-height Q8.8 screen samples require a bounded offset.
+    // Deliberately overflow this same coordinate later to verify fail-closed.
+    if(H>=128)uv_v=16'sd0;
     wr(6,{uv_v,uv_u});program_shader();
     clear_frame();
     // A busy shader cannot admit a new seed value; rejected host writes
@@ -372,6 +375,19 @@ module a0_p172_scaled_programmed_fragment_p102_tb #(
     rd(25,response);if(response!==32'd256)$fatal(1,"P163 host texture telemetry mismatch");
     rd(26,response);if(response!==32'(insn_writes))$fatal(1,"P163 instruction upload count mismatch");
     rd(27,response);if(response!==32'(seed_writes))$fatal(1,"P163 seed upload count mismatch");
+
+    if(H>=128)begin
+      // A +127.96875 texel initial Y fits signed Q8.8, but the next
+      // framebuffer row would exceed +127.996 and must fault before
+      // the shader consumes its wrapped negative coordinate.
+      wr(6,{16'sd32760,uv_u});
+      wr(16,2);
+      status=0;
+      for(integer k=0;k<500+W*H*96 && !status[2];k=k+1)rd(17,status);
+      if(!status[2] || status[4])
+        $fatal(1,"P180 signed Q8.8 overflow not rejected shape=%0dx%0d status=%h",W,H,status);
+      $display("P180_UV_OVERFLOW_FAIL_CLOSED_PASS shape=%0dx%0d status=%h",W,H,status);
+    end
 
     // After reset BRAM validity bits are all false. Texture fetch into a
     // half-texel coordinate must fault before any framebuffer pixel write.
