@@ -1,0 +1,118 @@
+name: A0-X P189 real 128x128 guarded programmable framebuffer ECP5 fit
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv'
+      - 'A0-GPU/rtl/graphics/a0_p68_depth_compare.sv'
+      - 'A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv'
+      - 'A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv'
+      - 'A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv'
+      - 'A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv'
+      - 'A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv'
+      - 'A0-GPU/rtl/graphics/a0_p166_perspective_vertex_uv.sv'
+      - 'A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv'
+      - 'A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv'
+      - 'A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv'
+      - 'A0-GPU/rtl/texture/a0_p156_nearest_texture.sv'
+      - 'A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv'
+      - '.github/workflows/a0-p189-physical-128x128-full-clear-validity.yml'
+      - 'A0-GPU/docs/P189-PHYSICAL-128X128-ECP5.md'
+      - 'A0-GPU/tests/rtl/a0_p189_128x128_full_clear_guard_tb.sv'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv'
+      - 'A0-GPU/rtl/graphics/a0_p68_depth_compare.sv'
+      - 'A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv'
+      - 'A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv'
+      - 'A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv'
+      - 'A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv'
+      - 'A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv'
+      - 'A0-GPU/rtl/graphics/a0_p166_perspective_vertex_uv.sv'
+      - 'A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv'
+      - 'A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv'
+      - 'A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv'
+      - 'A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv'
+      - 'A0-GPU/rtl/texture/a0_p156_nearest_texture.sv'
+      - 'A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv'
+      - '.github/workflows/a0-p189-physical-128x128-full-clear-validity.yml'
+      - 'A0-GPU/docs/P189-PHYSICAL-128X128-ECP5.md'
+      - 'A0-GPU/tests/rtl/a0_p189_128x128_full_clear_guard_tb.sv'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p189-guard-protocol:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify frame guard masks uninitialized and stale BRAM
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y iverilog
+          mkdir -p EVIDENCE/P189/rtl
+          iverilog -g2012 -s a0_p189_full_clear_guard_tb -o EVIDENCE/P189/rtl/guard.vvp \
+            A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv \
+            A0-GPU/tests/rtl/a0_p189_128x128_full_clear_guard_tb.sv
+          timeout 60s vvp EVIDENCE/P189/rtl/guard.vvp | tee EVIDENCE/P189/rtl/guard.log
+          grep -q '^P189_FULL_CLEAR_GUARD_PASS ' EVIDENCE/P189/rtl/guard.log
+      - name: Preserve frame guard RTL evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p189-128x128-full-clear-guard-rtl
+          path: EVIDENCE/P189/rtl
+          if-no-files-found: warn
+  p189-routed-128x128-ecp5:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual ECP5 synthesis and place-route tools
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y yosys nextpnr-ecp5
+      - name: Prove real BRAM and DSP inside full programmable fragment host top
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P189/route
+          yosys -p "read_verilog -sv A0-GPU/rtl/texture/a0_p156_nearest_texture.sv A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv A0-GPU/rtl/graphics/a0_p68_depth_compare.sv A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv A0-GPU/rtl/graphics/a0_p166_perspective_vertex_uv.sv A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv; chparam -set FRAME_WIDTH 128 -set FRAME_HEIGHT 128 a0_p175_scaled_programmed_command_top; hierarchy -check -top a0_p175_scaled_programmed_command_top; synth_ecp5 -top a0_p175_scaled_programmed_command_top -json EVIDENCE/P189/route/netlist.json; check -assert" 2>&1 | tee EVIDENCE/P189/route/yosys.log
+          nextpnr-ecp5 --85k --package CABGA756 --speed 6 \
+            --json EVIDENCE/P189/route/netlist.json \
+            --textcfg EVIDENCE/P189/route/route.config \
+            --report EVIDENCE/P189/route/route.json \
+            --freq 5 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P189/route/nextpnr.log
+          python3 - <<'PY'
+          import collections,json
+          from pathlib import Path
+          p=Path('EVIDENCE/P189/route')
+          m=json.loads((p/'netlist.json').read_text())['modules']['a0_p175_scaled_programmed_command_top']
+          pins=sum(len(v['bits']) for v in m['ports'].values())
+          c=collections.Counter(v['type'] for v in m['cells'].values())
+          assert 0<c.get('TRELLIS_FF',0)<9195,('P189 FF count at or above failed P185 baseline',c)
+          assert pins==77,('full host control bus must fit 77 real IO pins',pins)
+          assert 25<c.get('DP16KD',0)<=96,('P189 128x128 framebuffer BRAM budget 26..96',c)
+          assert c.get('MULT18X18D',0)>=40,('P162 texture or ALU DSP missing',c)
+          assert c.get('MULT18X18D',0)<=72,('P189 exceeded 72-DSP shader budget',c)
+          assert not any(k.startswith('$') or k.startswith('a0_') or 'LATCH' in k.upper() for k in c),c
+          fmax=json.loads((p/'route.json').read_text())['fmax']
+          assert fmax and all(v['achieved']>=30.0 for v in fmax.values()),('P189 128x128 missed 30MHz experimental quality floor',fmax)
+          assert all(v.get('achieved',0)>0 for v in fmax.values()),('P189 missing actual placed-route clock',fmax)
+          assert 0<c.get('LUT4',0)<=83640 and 0<c.get('TRELLIS_FF',0)<=83640,('P189 missing or overfull Yosys LUT4/FF evidence',c)
+          achieved_mhz=min(v['achieved'] for v in fmax.values())
+          print('P189_REAL_128X128_ECP5_ROUTE_PASS pins=%d pixels=16384 BRAM=%d DSP=%d LUT4=%d FF=%d MHz=%.2f'%(pins,c['DP16KD'],c['MULT18X18D'],c['LUT4'],c['TRELLIS_FF'],achieved_mhz))
+          PY
+      - name: Preserve routed bitstream and mapped evidence on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p189-real-128x128-programmed-raster-ecp5
+          path: EVIDENCE/P189/route
+          if-no-files-found: warn
