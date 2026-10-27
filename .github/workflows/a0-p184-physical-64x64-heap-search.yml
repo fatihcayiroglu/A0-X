@@ -64,7 +64,7 @@ jobs:
             --textcfg EVIDENCE/P184/route/route.config \
             --report EVIDENCE/P184/route/route.json \
             --freq 5 --lpf-allow-unconstrained --seed 1 \
-            --placer-heap-cell-placement-timeout 100000 \
+            --placer-heap-cell-placement-timeout 1 \
             2>&1 | tee EVIDENCE/P184/route/nextpnr.log
           python3 - <<'PY'
           import collections,json
