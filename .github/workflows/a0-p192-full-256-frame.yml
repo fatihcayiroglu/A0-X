@@ -98,7 +98,7 @@ jobs:
           assert pins==77,('P192 host IO changed',pins)
           assert 0<bram<=208,('P192 85K BRAM physical capacity not proven',bram)
           assert 0<dsp<=72,('P192 shader DSP absent or overfull',dsp)
-          assert 0<lut<=83640 and 0<ff<9195,('P192 mapped logic resource overflow',lut,ff))
+          assert 0<lut<=83640 and 0<ff<9195,('P192 mapped logic resource overflow',lut,ff)
           assert not any(k.startswith('$') or k.startswith('a0_') or 'LATCH' in k.upper() for k in c),c
           PY
       - name: Preserve synthesis netlist and logs even when red
