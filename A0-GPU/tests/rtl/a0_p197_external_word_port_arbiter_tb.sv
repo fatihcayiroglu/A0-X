@@ -1,4 +1,4 @@
-\`timescale 1ns/1ps
+`timescale 1ns/1ps
 module a0_p197_external_word_port_arbiter_tb;
   localparam logic [31:0] BASE=32'h01000000;
   localparam logic [47:0] P0=48'h001122334455;
