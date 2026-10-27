@@ -103,6 +103,13 @@ module a0_p191_tiled_programmed_frame_tb #(
     wr(11,32'd0);wr(12,{7'd0,alu_copy_r1()});
     wr(8,{24'd0,3'd0,5'd1}); // shader output R0, one unrelated ALU op
     wr(16,32'd1);poll(3);
+    $display("P191_CLEAR_TRACE shape=%0dx%0d state=%0d clearpos=%0d fb=%0d,%0d high_valid=%b high_word=%h low_valid=%b low_word=%h",
+      W,H,dut.core.state_q,dut.core.clear_pos_q,
+      dut.core.fb_x_q,dut.core.fb_y_q,
+      dut.core.framebuffer.banks.storage.valid1[((BASE_Y+1)*W+BASE_X+1)/2],
+      dut.core.framebuffer.banks.storage.bank1[((BASE_Y+1)*W+BASE_X+1)/2],
+      dut.core.framebuffer.banks.storage.valid1[(W+1)/2],
+      dut.core.framebuffer.banks.storage.bank1[(W+1)/2]);
     check_pixel(BASE_X+1,BASE_Y+1,24'h112233,24'hffffff);
     check_pixel(1,1,24'h112233,24'hffffff);
     wr(16,32'd2);poll(4);
