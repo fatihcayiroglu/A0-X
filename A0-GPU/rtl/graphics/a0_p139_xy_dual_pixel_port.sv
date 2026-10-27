@@ -10,9 +10,11 @@ module a0_p139_xy_dual_pixel_port #(
   parameter integer FRAME_WIDTH=4,
   parameter integer FRAME_HEIGHT=4,
   parameter integer PIXELS=FRAME_WIDTH*FRAME_HEIGHT,
-  parameter integer ADDR_BITS=PIXELS<=1 ? 1 : $clog2(PIXELS)
+  parameter integer ADDR_BITS=PIXELS<=1 ? 1 : $clog2(PIXELS),
+  parameter bit FULL_CLEAR_GUARD=1'b0
 )(
   input  logic clk,rst_n,
+  input  logic frame_initialized,
   input  logic req0_valid,
   output logic req0_ready,
   input  logic req0_write,
@@ -51,9 +53,10 @@ module a0_p139_xy_dual_pixel_port #(
   assign req1_ready=(req1_valid && !in1) ? rst_n : mem_ready1;
 
   a0_p138_dual_bank_framebuffer #(
-    .FRAME_WIDTH(FRAME_WIDTH),.FRAME_HEIGHT(FRAME_HEIGHT)
+    .FRAME_WIDTH(FRAME_WIDTH),.FRAME_HEIGHT(FRAME_HEIGHT),
+    .FULL_CLEAR_GUARD(FULL_CLEAR_GUARD)
   ) storage (
-    .clk(clk),.rst_n(rst_n),
+    .clk(clk),.rst_n(rst_n),.frame_initialized(frame_initialized),
     .req0_valid(req0_valid && in0),.req0_ready(mem_ready0),
     .req0_write(req0_write),.req0_index(index0),.req0_wdata(req0_wdata),
     .rsp0_valid(mem_rsp0_valid),.rsp0_error(mem_rsp0_error),
