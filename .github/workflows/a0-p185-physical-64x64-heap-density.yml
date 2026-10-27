@@ -18,8 +18,8 @@ on:
       - 'A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv'
       - 'A0-GPU/rtl/texture/a0_p156_nearest_texture.sv'
       - 'A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv'
-      - '.github/workflows/a0-p185-physical-64x64-heap-search.yml'
-      - 'A0-GPU/docs/P185-PHYSICAL-64X64-HEAP-SEARCH.md'
+      - '.github/workflows/a0-p185-physical-64x64-heap-density.yml'
+      - 'A0-GPU/docs/P185-PHYSICAL-64X64-HEAP-DENSITY.md'
   push:
     branches: [main]
     paths:
@@ -39,8 +39,8 @@ on:
       - 'A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv'
       - 'A0-GPU/rtl/texture/a0_p156_nearest_texture.sv'
       - 'A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv'
-      - '.github/workflows/a0-p185-physical-64x64-heap-search.yml'
-      - 'A0-GPU/docs/P185-PHYSICAL-64X64-HEAP-SEARCH.md'
+      - '.github/workflows/a0-p185-physical-64x64-heap-density.yml'
+      - 'A0-GPU/docs/P185-PHYSICAL-64X64-HEAP-DENSITY.md'
   workflow_dispatch:
 permissions:
   contents: read
