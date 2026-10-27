@@ -82,15 +82,6 @@ module a0_p191_tiled_programmed_frame_tb #(
     begin
       wr(15,{16'(y),16'(x)});
       wr(16,32'd3);
-      if (x==BASE_X+1 && y==BASE_Y+1)
-        $display("P191_HOST_TRACE xy=%0d,%0d read_xy=%0d,%0d cache=%h/%h cached=%b hosttag=%b storage_rsp=%b/%h read0=%b init=%b bank1_read=%h core_rsp=%b/%h",
-          x,y,dut.read_x_q,dut.read_y_q,dut.cached_rgb_q,dut.cached_z_q,
-          dut.pixel_cached_q,dut.core.framebuffer.host_tag_q,
-          dut.core.framebuffer.mem0_rsp_valid,dut.core.framebuffer.mem0_rsp_data,
-          dut.core.framebuffer.banks.storage.read0_q,
-          dut.core.framebuffer.banks.storage.read0_initialized_q,
-          dut.core.framebuffer.banks.storage.bank1_read_q,
-          dut.core_host_valid,dut.core_host_rgb);
       rd(18,rgb);rd(19,z);
       if(rgb[23:0]!==expected_rgb || z[23:0]!==expected_z)
         $fatal(1,"P191 wrong global pixel %0d,%0d got %h/%h expected %h/%h",
@@ -112,13 +103,6 @@ module a0_p191_tiled_programmed_frame_tb #(
     wr(11,32'd0);wr(12,{7'd0,alu_copy_r1()});
     wr(8,{24'd0,3'd0,5'd1}); // shader output R0, one unrelated ALU op
     wr(16,32'd1);poll(3);
-    $display("P191_CLEAR_TRACE shape=%0dx%0d state=%0d clearpos=%0d fb=%0d,%0d high_valid=%b high_word=%h low_valid=%b low_word=%h",
-      W,H,dut.core.state_q,dut.core.clear_pos_q,
-      dut.core.fb_x_q,dut.core.fb_y_q,
-      dut.core.framebuffer.banks.storage.valid1[((BASE_Y+1)*W+BASE_X+1)/2],
-      dut.core.framebuffer.banks.storage.bank1[((BASE_Y+1)*W+BASE_X+1)/2],
-      dut.core.framebuffer.banks.storage.valid1[(W+1)/2],
-      dut.core.framebuffer.banks.storage.bank1[(W+1)/2]);
     check_pixel(BASE_X+1,BASE_Y+1,24'h112233,24'hffffff);
     check_pixel(1,1,24'h112233,24'hffffff);
     wr(16,32'd2);poll(4);
@@ -134,6 +118,9 @@ module a0_p191_tiled_programmed_frame_tb #(
     wr(15,{16'(BASE_Y+1),16'(BASE_X+1)});
     txn(1,6'd16,32'd3,err,answer);
     if(!err)$fatal(1,"P191 uninitialized frame host read incorrectly accepted");
+    // The host configuration registers are reset, not retained across reset.
+    // Reprogram the required clear values before proving reinitialization.
+    wr(0,32'h00112233);wr(1,32'h00ffffff);
     wr(16,32'd1);poll(3);
     check_pixel(BASE_X+1,BASE_Y+1,24'h112233,24'hffffff);
     $display("P191_TILED_PROGRAMMED_FRAME_PASS shape=%0dx%0d high_xy=%0d,%0d shader_retired=%0d masked_reset=1",
