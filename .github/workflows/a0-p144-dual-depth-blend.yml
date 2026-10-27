@@ -2,6 +2,8 @@ name: A0-X P144 two-bank depth and alpha RMW real RTL + ECP5
 on:
   pull_request:
     paths:
+      - 'A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv'
+      - 'A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv'
       - 'A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv'
       - 'A0-GPU/tests/rtl/a0_p144_dual_depth_blend_tb.sv'
       - 'A0-GPU/docs/P144-DUAL-DEPTH-BLEND-RMW.md'
@@ -9,6 +11,8 @@ on:
   push:
     branches: [main]
     paths:
+      - 'A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv'
+      - 'A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv'
       - 'A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv'
       - 'A0-GPU/tests/rtl/a0_p144_dual_depth_blend_tb.sv'
       - '.github/workflows/a0-p144-dual-depth-blend.yml'

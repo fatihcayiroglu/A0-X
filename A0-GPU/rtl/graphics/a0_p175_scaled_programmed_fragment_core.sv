@@ -199,7 +199,7 @@ module a0_p175_scaled_programmed_fragment_core #(
   // returns success. Only large shapes replace resettable validity bits
   // with a single frame-initialized guard; all standalone modules default off.
   a0_p144_dual_depth_blend_rmw #(.FRAME_WIDTH(FRAME_WIDTH),
-     .FRAME_HEIGHT(FRAME_HEIGHT),.FULL_CLEAR_GUARD(PIXELS>=4096)) framebuffer(
+     .FRAME_HEIGHT(FRAME_HEIGHT),.FULL_CLEAR_GUARD(PIXELS>=2048)) framebuffer(
     .clk(clk),.rst_n(rst_n),.frame_initialized(initialized_q),
     .op_valid(clear_op || pixel_op),.op_ready(rmw_ready),
     .op_clear(clear_op),
