@@ -11,10 +11,14 @@ module a0_p138_dual_bank_framebuffer #(
     parameter integer FRAME_HEIGHT=4,
     parameter integer PIXELS=FRAME_WIDTH*FRAME_HEIGHT,
     parameter integer ADDR_BITS=PIXELS<=1 ? 1 : $clog2(PIXELS),
-    parameter integer BANK_DEPTH=(PIXELS+1)/2
+    parameter integer BANK_DEPTH=(PIXELS+1)/2,
+    // Only integrated clients with an enforced complete-clear protocol may opt in.
+    parameter bit FULL_CLEAR_GUARD=1'b0
 )(
     input  logic clk,
     input  logic rst_n,
+    // True only after every pixel has been overwritten since the last reset/clear.
+    input  logic frame_initialized,
 
     input  logic req0_valid,
     output logic req0_ready,
@@ -35,8 +39,10 @@ module a0_p138_dual_bank_framebuffer #(
     output logic [47:0] rsp1_rdata
 );
     // Interleaved 48-bit packed {RGB888,depth24}, 2 banks.
-    // Data arrays deliberately have NO hardware reset. Only validity
-    // metadata resets. Unwritten locations return zero deterministically.
+    // Data arrays deliberately have NO hardware reset. Legacy clients keep
+    // per-pixel resettable validity, so unwritten locations read as zero.
+    // The opt-in full-clear client uses one registered frame guard instead;
+    // it must never assert frame_initialized until all pixels are overwritten.
     (* ram_style = "block" *) logic [47:0] bank0 [0:BANK_DEPTH-1];
     (* ram_style = "block" *) logic [47:0] bank1 [0:BANK_DEPTH-1];
     logic [BANK_DEPTH-1:0] valid0,valid1;
@@ -98,7 +104,7 @@ module a0_p138_dual_bank_framebuffer #(
     // (first P182 128x64 oracle exceeded 240s). Large banks retain the
     // original proven dynamic-index sequential assignment. The same branch
     // is used by synthesis AND simulation for each parameterized geometry.
-    generate if (BANK_DEPTH <= 512) begin : GEN_SMALL_VALID_BITS
+    generate if (!FULL_CLEAR_GUARD && BANK_DEPTH <= 512) begin : GEN_SMALL_VALID_BITS
         for (genvar valid_idx = 0; valid_idx < BANK_DEPTH; valid_idx = valid_idx + 1) begin : GEN_VALID_BITS
             wire valid0_set = bank0_we && (bank0_write_addr == ADDR_BITS'(valid_idx));
             wire valid1_set = bank1_we && (bank1_write_addr == ADDR_BITS'(valid_idx));
@@ -112,7 +118,7 @@ module a0_p138_dual_bank_framebuffer #(
                 end
             end
         end
-    end else begin : GEN_LARGE_VALID_BITS
+    end else if (!FULL_CLEAR_GUARD) begin : GEN_LARGE_VALID_BITS
         always_ff @(posedge clk) begin
             if (!rst_n) begin
                 valid0 <= '0;
@@ -148,9 +154,11 @@ module a0_p138_dual_bank_framebuffer #(
             read0_bank_q <= req0_index[0];
             read1_bank_q <= req1_index[0];
             read0_initialized_q <= index0_ok &&
-                (req0_index[0] ? valid1[offset0] : valid0[offset0]);
+                (FULL_CLEAR_GUARD ? frame_initialized :
+                    (req0_index[0] ? valid1[offset0] : valid0[offset0]));
             read1_initialized_q <= index1_ok &&
-                (req1_index[0] ? valid1[offset1] : valid0[offset1]);
+                (FULL_CLEAR_GUARD ? frame_initialized :
+                    (req1_index[0] ? valid1[offset1] : valid0[offset1]));
         end
     end
 
@@ -163,7 +171,8 @@ module a0_p138_dual_bank_framebuffer #(
         if (FRAME_WIDTH < 1 || FRAME_HEIGHT < 1 ||
             PIXELS != FRAME_WIDTH*FRAME_HEIGHT ||
             PIXELS < 2 || PIXELS > 65536 ||
-            ADDR_BITS < $clog2(PIXELS) || BANK_DEPTH < (PIXELS+1)/2)
+            ADDR_BITS < $clog2(PIXELS) || BANK_DEPTH < (PIXELS+1)/2 ||
+            (FULL_CLEAR_GUARD && PIXELS < 4096))
             $fatal(1,"P138 unsupported scratchpad geometry");
     end
 endmodule
