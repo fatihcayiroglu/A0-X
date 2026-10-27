@@ -1,0 +1,63 @@
+`timescale 1ns/1ps
+// P186: the specialized large-frame bank must never expose stale BRAM
+// before a fully completed clear, or after the guard is withdrawn/reset.
+module a0_p186_full_clear_guard_tb;
+  logic clk=0;
+  always #5 clk=~clk;
+  logic rst_n=0,frame_initialized=0;
+  logic req0_valid=0,req0_write=0;
+  logic [11:0] req0_index=0;
+  logic [47:0] req0_wdata=0;
+  wire req0_ready,rsp0_valid,rsp0_error;
+  wire [47:0] rsp0_rdata;
+  a0_p138_dual_bank_framebuffer #(
+    .FRAME_WIDTH(64),.FRAME_HEIGHT(64),.FULL_CLEAR_GUARD(1'b1)
+  ) dut (
+    .clk(clk),.rst_n(rst_n),.frame_initialized(frame_initialized),
+    .req0_valid(req0_valid),.req0_ready(req0_ready),
+    .req0_write(req0_write),.req0_index(req0_index),
+    .req0_wdata(req0_wdata),.rsp0_valid(rsp0_valid),
+    .rsp0_error(rsp0_error),.rsp0_rdata(rsp0_rdata),
+    .req1_valid(1'b0),.req1_ready(),.req1_write(1'b0),
+    .req1_index(12'd0),.req1_wdata(48'd0),
+    .rsp1_valid(),.rsp1_error(),.rsp1_rdata()
+  );
+  task automatic transact(input logic write_en,
+                           input logic [11:0] index,
+                           input logic [47:0] data,
+                           input logic [47:0] expected);
+    begin
+      @(negedge clk);
+      req0_valid=1;req0_write=write_en;
+      req0_index=index;req0_wdata=data;
+      #1;
+      if (req0_ready!==1'b1) $fatal(1,"P186 request not ready");
+      @(posedge clk); #1;
+      if (rsp0_valid!==1'b1 || rsp0_error!==1'b0)
+        $fatal(1,"P186 missing/errored response");
+      if (!write_en && rsp0_rdata!==expected)
+        $fatal(1,"P186 read leak idx=%0d observed=%h expected=%h",
+               index,rsp0_rdata,expected);
+      @(negedge clk); req0_valid=0;
+      @(posedge clk); #1;
+      if (rsp0_valid!==1'b0) $fatal(1,"P186 stale response");
+    end
+  endtask
+  initial begin
+    repeat(3) @(negedge clk);
+    rst_n=1;
+    transact(0,12'd2,48'd0,48'd0);
+    transact(1,12'd2,48'hABCDEF123456,48'd0);
+    transact(0,12'd2,48'd0,48'd0);
+    @(negedge clk); frame_initialized=1;
+    transact(0,12'd2,48'd0,48'hABCDEF123456);
+    @(negedge clk); frame_initialized=0;
+    transact(0,12'd2,48'd0,48'd0);
+    @(negedge clk); rst_n=0;
+    repeat(2) @(negedge clk); rst_n=1;
+    transact(0,12'd2,48'd0,48'd0);
+    $display("P186_FULL_CLEAR_GUARD_PASS uninitialized masked initialized visible reset masked");
+    $finish;
+  end
+  initial begin #2000; $fatal(1,"P186 guard test timeout"); end
+endmodule
