@@ -9,9 +9,11 @@
 module a0_p144_dual_depth_blend_rmw #(
   parameter integer FRAME_WIDTH=4,
   parameter integer FRAME_HEIGHT=4,
-  parameter integer PIXELS=FRAME_WIDTH*FRAME_HEIGHT
+  parameter integer PIXELS=FRAME_WIDTH*FRAME_HEIGHT,
+  parameter bit FULL_CLEAR_GUARD=1'b0
 )(
   input  logic clk, rst_n,
+  input  logic frame_initialized,
   input  logic op_valid,
   output logic op_ready,
   input  logic op_clear,
@@ -122,9 +124,10 @@ module a0_p144_dual_depth_blend_rmw #(
   end
 
   a0_p139_xy_dual_pixel_port #(
-    .FRAME_WIDTH(FRAME_WIDTH),.FRAME_HEIGHT(FRAME_HEIGHT)
+    .FRAME_WIDTH(FRAME_WIDTH),.FRAME_HEIGHT(FRAME_HEIGHT),
+    .FULL_CLEAR_GUARD(FULL_CLEAR_GUARD)
   ) banks(
-    .clk(clk),.rst_n(rst_n),
+    .clk(clk),.rst_n(rst_n),.frame_initialized(frame_initialized),
     .req0_valid(mem0_req_valid),.req0_ready(mem0_ready),
     .req0_write(mem0_write),.req0_x(mem0_x),.req0_y(mem0_y),
     .req0_wdata(mem0_wdata),.rsp0_valid(mem0_rsp_valid),
