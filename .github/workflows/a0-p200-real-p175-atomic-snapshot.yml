@@ -1,0 +1,83 @@
+name: A0-X P200 real P175 two-frame atomic publication
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/memory/a0_p200_dual_bank_word_router.sv'
+      - 'A0-GPU/rtl/memory/a0_p198_p175_frame_snapshot_export.sv'
+      - 'A0-GPU/tests/rtl/a0_p200_p175_atomic_dual_snapshot_tb.sv'
+      - 'A0-GPU/docs/P200-REAL-P175-ATOMIC-DOUBLE-SNAPSHOT.md'
+      - '.github/workflows/a0-p200-real-p175-atomic-snapshot.yml'
+      - 'A0-GPU/rtl/memory/a0_p199_atomic_frame_bank_epoch.sv'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/memory/a0_p200_dual_bank_word_router.sv'
+      - 'A0-GPU/rtl/memory/a0_p198_p175_frame_snapshot_export.sv'
+      - 'A0-GPU/tests/rtl/a0_p200_p175_atomic_dual_snapshot_tb.sv'
+      - '.github/workflows/a0-p200-real-p175-atomic-snapshot.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p200-p175-real-double-snapshot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual Icarus and Yosys
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y iverilog yosys
+      - name: Prove genuine second P175 full-frame export and no torn old-frame reads
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P200/rtl
+          sources=(
+            A0-GPU/rtl/texture/a0_p156_nearest_texture.sv
+            A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv
+            A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv
+            A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv
+            A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv
+            A0-GPU/rtl/graphics/a0_p68_depth_compare.sv
+            A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv
+            A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv
+            A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv
+            A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv
+            A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv
+            A0-GPU/rtl/graphics/a0_p166_perspective_vertex_uv.sv
+            A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv
+            A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv
+            A0-GPU/rtl/graphics/a0_p190_tiled_screen_uv.sv
+            A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv
+            A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv
+            A0-GPU/rtl/memory/a0_p195_external_pixel_write_queue.sv
+            A0-GPU/rtl/memory/a0_p197_external_word_port_arbiter.sv
+            A0-GPU/rtl/memory/a0_p198_p175_frame_snapshot_export.sv
+            A0-GPU/rtl/memory/a0_p199_atomic_frame_bank_epoch.sv
+            A0-GPU/rtl/memory/a0_p200_dual_bank_word_router.sv
+            A0-GPU/tests/rtl/models/a0_p196_external_word_memory_model.sv
+          )
+          iverilog -g2012 -Wall -s a0_p200_p175_atomic_dual_snapshot_tb \
+            -o EVIDENCE/P200/rtl/p200.vvp \
+            "${sources[@]}" A0-GPU/tests/rtl/a0_p200_p175_atomic_dual_snapshot_tb.sv
+          timeout 1200s vvp EVIDENCE/P200/rtl/p200.vvp \
+            | tee EVIDENCE/P200/rtl/p200.log
+          grep -q '^P200_REAL_P175_ATOMIC_DUAL_SNAPSHOT_PASS frame=256x256 epochs=2 exported=131072 old_reads=200 no_torn_reads=1 real_p175=1 rearmed_exporter=1 routed_banks=1 backpressure=1 reset_fail_closed=1$' \
+            EVIDENCE/P200/rtl/p200.log
+      - name: Synthesize actual dual-bank router and restarted P198 exporter
+        run: |
+          set -euo pipefail
+          yosys -Q -T -p 'read_verilog -sv A0-GPU/rtl/memory/a0_p200_dual_bank_word_router.sv; hierarchy -check -top a0_p200_dual_bank_word_router; synth -top a0_p200_dual_bank_word_router; check -assert; stat' \
+            | tee EVIDENCE/P200/rtl/p200_router_yosys.log
+          grep -q 'Found and reported 0 problems.' EVIDENCE/P200/rtl/p200_router_yosys.log
+          grep -q '=== a0_p200_dual_bank_word_router ===' EVIDENCE/P200/rtl/p200_router_yosys.log
+          yosys -Q -T -p 'read_verilog -sv A0-GPU/rtl/memory/a0_p198_p175_frame_snapshot_export.sv; hierarchy -check -top a0_p198_p175_frame_snapshot_export; synth -top a0_p198_p175_frame_snapshot_export; check -assert; stat' \
+            | tee EVIDENCE/P200/rtl/p200_rearmed_export_yosys.log
+          grep -q 'Found and reported 0 problems.' EVIDENCE/P200/rtl/p200_rearmed_export_yosys.log
+      - name: Preserve first-failure output without retries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p200-real-p175-atomic-double-snapshot-evidence
+          path: EVIDENCE/P200/rtl
+          if-no-files-found: warn
