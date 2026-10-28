@@ -224,12 +224,12 @@ module a0_p201_automatic_p175_epoch_tb #(
         seals=seals+1;
         if(committed_words!=W*H || fifo_words!=0 ||
            export_accepted!=W*H || !export_done)
-          $fatal(1,\"P201 premature seal commits=%0d fifo=%0d queued=%0d done=%b\",
+          $fatal(1,"P201 premature seal commits=%0d fifo=%0d queued=%0d done=%b",
             committed_words,fifo_words,export_accepted,export_done);
       end
       if((published_epochs==1 && committed_export<W*H) ||
          (published_epochs==2 && committed_export<2*W*H))
-        $fatal(1,\"P201 partial frame published epoch=%0d committed=%0d\",
+        $fatal(1,"P201 partial frame published epoch=%0d committed=%0d",
           published_epochs,committed_export);
       if(export_pixel_valid && !export_pixel_ready)
         export_stalls=export_stalls+1;
