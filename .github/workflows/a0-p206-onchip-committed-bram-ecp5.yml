@@ -1,0 +1,165 @@
+name: A0-X P206 scrubbed onchip committed BRAM ECP5 proof
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv'
+      - 'A0-GPU/tests/rtl/a0_p206_committed_bram_tb.sv'
+      - 'A0-GPU/docs/P206-ONCHIP-COMMITTED-BRAM.md'
+      - '.github/workflows/a0-p206-onchip-committed-bram-ecp5.yml'
+      - 'A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv'
+      - 'A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv'
+      - 'A0-GPU/tests/rtl/a0_p205_narrow_mailbox_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p203_tagged_p175_epoch_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p203_tagged_bridge_fault_tb.sv'
+      - 'A0-GPU/tests/rtl/models/a0_p203_tagged_sim_controller.sv'
+      - 'A0-GPU/docs/P205-NARROW-P203-PHYSICAL-MAILBOX.md'
+      - '.github/workflows/a0-p205-narrow-mailbox-ecp5.yml'
+      - 'A0-GPU/rtl/memory/a0_p200_dual_bank_word_router.sv'
+      - 'A0-GPU/rtl/memory/a0_p199_atomic_frame_bank_epoch.sv'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv'
+      - 'A0-GPU/tests/rtl/a0_p206_committed_bram_tb.sv'
+      - 'A0-GPU/docs/P206-ONCHIP-COMMITTED-BRAM.md'
+      - '.github/workflows/a0-p206-onchip-committed-bram-ecp5.yml'
+      - 'A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv'
+      - 'A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv'
+      - 'A0-GPU/tests/rtl/a0_p205_narrow_mailbox_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p203_tagged_p175_epoch_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p203_tagged_bridge_fault_tb.sv'
+      - '.github/workflows/a0-p205-narrow-mailbox-ecp5.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p206-onchip-committed-bram-route:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual Icarus, Yosys and nextpnr ECP5
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y iverilog yosys nextpnr-ecp5
+      - name: Prove P175 real frames pass two tagged write-commit bridges
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P206/rtl
+          sources=(
+            A0-GPU/rtl/texture/a0_p156_nearest_texture.sv
+            A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv
+            A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv
+            A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv
+            A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv
+            A0-GPU/rtl/graphics/a0_p68_depth_compare.sv
+            A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv
+            A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv
+            A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv
+            A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv
+            A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv
+            A0-GPU/rtl/graphics/a0_p166_perspective_vertex_uv.sv
+            A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv
+            A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv
+            A0-GPU/rtl/graphics/a0_p190_tiled_screen_uv.sv
+            A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv
+            A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv
+            A0-GPU/rtl/memory/a0_p195_external_pixel_write_queue.sv
+            A0-GPU/rtl/memory/a0_p197_external_word_port_arbiter.sv
+            A0-GPU/rtl/memory/a0_p198_p175_frame_snapshot_export.sv
+            A0-GPU/rtl/memory/a0_p199_atomic_frame_bank_epoch.sv
+            A0-GPU/rtl/memory/a0_p200_dual_bank_word_router.sv
+            A0-GPU/rtl/memory/a0_p201_automatic_frame_epoch_sequencer.sv
+            A0-GPU/rtl/memory/a0_p202_bounded_bank_port_guard.sv
+            A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv
+            A0-GPU/tests/rtl/models/a0_p203_tagged_sim_controller.sv
+            A0-GPU/tests/rtl/models/a0_p196_external_word_memory_model.sv
+          )
+          iverilog -g2012 -Wall -s a0_p203_tagged_p175_epoch_tb \
+            -o EVIDENCE/P206/rtl/p203_full.vvp \
+            "${sources[@]}" A0-GPU/tests/rtl/a0_p203_tagged_p175_epoch_tb.sv
+          timeout 1200s vvp EVIDENCE/P206/rtl/p203_full.vvp \
+            | tee EVIDENCE/P206/rtl/p203_full.log
+          grep -q '^P203_TAGGED_P175_EPOCH_PASS frame=256x256 epochs=2 exported=131072 old_reads=200 auto_begin=1 auto_seal=1 atomic_publish=1 reset_fail_closed=1$' \
+            EVIDENCE/P206/rtl/p203_full.log
+      - name: Fault-inject missing and mismatched tagged controller acknowledgements
+        run: |
+          set -euo pipefail
+          iverilog -g2012 -Wall -s a0_p203_tagged_bridge_fault_tb \
+            -o EVIDENCE/P206/rtl/p203_negative.vvp \
+            A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
+            A0-GPU/tests/rtl/a0_p203_tagged_bridge_fault_tb.sv
+          timeout 60s vvp EVIDENCE/P206/rtl/p203_negative.vvp \
+            | tee EVIDENCE/P206/rtl/p203_negative.log
+          grep -q '^P203_TAGGED_BRIDGE_FAULT_PASS flush_barrier=1 read_tag=1 write_commit_only=1 wrong_tag=1 read_timeout=1 one_error=1 late_quarantine=1 write_timeout=1 mutated_write=1 unsolicited=1 wrong_bank=1 failed_write=1$' \
+            EVIDENCE/P206/rtl/p203_negative.log
+      - name: Synthesize tagged controller bridge and require zero structural problems
+        run: |
+          set -euo pipefail
+          yosys -Q -T -p 'read_verilog -sv A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv; hierarchy -check -top a0_p203_tagged_controller_bridge; synth -top a0_p203_tagged_controller_bridge; check -assert; stat' \
+            | tee EVIDENCE/P206/rtl/p203_yosys.log
+          grep -q 'Found and reported 0 problems.' EVIDENCE/P206/rtl/p203_yosys.log
+          grep -q '=== a0_p203_tagged_controller_bridge ===' EVIDENCE/P206/rtl/p203_yosys.log
+      - name: Prove actual narrow mailbox transaction and all negative guards
+        run: |
+          set -euo pipefail
+          iverilog -g2012 -Wall -s a0_p205_narrow_mailbox_tb \
+            -o EVIDENCE/P206/rtl/p205_mailbox.vvp \
+            A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
+            A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv \
+            A0-GPU/tests/rtl/models/a0_p196_external_word_memory_model.sv \
+            A0-GPU/tests/rtl/a0_p205_narrow_mailbox_tb.sv
+          timeout 90s vvp EVIDENCE/P206/rtl/p205_mailbox.vvp \
+            | tee EVIDENCE/P206/rtl/p205_mailbox.log
+          grep -q '^P205_NARROW_MAILBOX_PASS io_bits=54 flush=1 byte_write=1 commit_ack=1 byte_read=1 readback=1 partial_reject=1 wrong_tag=1 wrong_bank=1 duplicate_kick=1 incomplete_reply=1$' \
+            EVIDENCE/P206/rtl/p205_mailbox.log
+      - name: Run end-to-end physical RTL BRAM write/read/reset/negative proof
+        run: |
+          set -euo pipefail
+          iverilog -g2012 -Wall -s a0_p206_committed_bram_tb \
+            -o EVIDENCE/P206/rtl/p206_bram.vvp \
+            A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
+            A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv \
+            A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv \
+            A0-GPU/tests/rtl/a0_p206_committed_bram_tb.sv
+          timeout 90s vvp EVIDENCE/P206/rtl/p206_bram.vvp \
+            | tee EVIDENCE/P206/rtl/p206_bram.log
+          grep -q '^P206_ONCHIP_BRAM_PASS pins=29 words=8 scrub=1 reset_zero=1 write_commit=1 byte_readback=1 two_addresses=1 partial_reject=1 wrong_bank=1$' \
+            EVIDENCE/P206/rtl/p206_bram.log
+      - name: Physically route real P203 and P205 with inferred onchip EBR
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P206/route
+          yosys -Q -T -p 'read_verilog -sv A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv; hierarchy -check -top a0_p206_committed_bram_top; synth_ecp5 -top a0_p206_committed_bram_top -json EVIDENCE/P206/route/netlist.json; check -assert; stat' \
+            2>&1 | tee EVIDENCE/P206/route/yosys_ecp5.log
+          grep -q 'Found and reported 0 problems.' EVIDENCE/P206/route/yosys_ecp5.log
+          timeout 1500s nextpnr-ecp5 --85k --package CABGA381 --speed 6 \
+            --json EVIDENCE/P206/route/netlist.json \
+            --textcfg EVIDENCE/P206/route/route.config \
+            --report EVIDENCE/P206/route/route.json \
+            --freq 10 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P206/route/nextpnr.log
+          python3 - <<'PY'
+          import collections,json
+          from pathlib import Path
+          p=Path('EVIDENCE/P206/route')
+          top=json.loads((p/'netlist.json').read_text())['modules']['a0_p206_committed_bram_top']
+          pins=sum(len(v['bits']) for v in top['ports'].values())
+          cells=collections.Counter(v['type'] for v in top['cells'].values())
+          assert pins==29,('host-only top must expose exactly 29 bits',pins)
+          assert cells.get('DP16KD',0)>=1,('no real FPGA EBR; simulation-only or logic RAM unacceptable',cells)
+          assert cells.get('LUT4',0)>0 and cells.get('TRELLIS_FF',0)>0,('missing mapped ECP5 controller',cells)
+          assert not any(k.startswith('$') or k.startswith('a0_') or 'LATCH' in k.upper() for k in cells),('unmapped/blackbox/latch cells',cells)
+          fmax=json.loads((p/'route.json').read_text()).get('fmax',{})
+          assert fmax and all(v.get('achieved',0)>0 for v in fmax.values()),('no actual physical routed clock',fmax)
+          achieved=min(v['achieved'] for v in fmax.values())
+          assert achieved>=10.0,('physical route below 10 MHz experiment floor',fmax)
+          print('P206_REAL_EBR_ROUTE_PASS package=CABGA381 pins=%d EBR=%d LUT4=%d FF=%d MHz=%.2f'%(pins,cells['DP16KD'],cells['LUT4'],cells['TRELLIS_FF'],achieved))
+          PY
+      - name: Preserve first-failure output without retries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p206-onchip-committed-bram-ecp5-evidence
+          path: EVIDENCE/P206
+          if-no-files-found: warn
