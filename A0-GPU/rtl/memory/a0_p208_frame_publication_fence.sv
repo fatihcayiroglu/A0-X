@@ -25,7 +25,7 @@ module a0_p208_frame_publication_fence #(
   logic [WORDS-1:0] committed0_q,committed1_q;
   wire [7:0] lower_rdata;
   wire lower_ready,lower_fault,lower_busy;
-  wire meta=(host_addr>=6'h31 && host_addr<=6'h36);
+  wire meta=(host_addr>=6'h31 && host_addr<=6'h37);
   wire any_fault=local_fault_q || lower_fault;
   wire blocked_front=host_write && front_valid_q &&
     host_bank_q==front_bank_q &&
@@ -60,6 +60,7 @@ module a0_p208_frame_publication_fence #(
       6'h34:host_rdata=epoch_q[7:0];
       6'h35:host_rdata=epoch_q[15:8];
       6'h36:host_rdata=epoch_q[23:16];
+      6'h37:host_rdata=epoch_q[31:24];
       default:host_rdata=8'd0;
     endcase
   end
