@@ -1,5 +1,5 @@
 `timescale 1ns/1ps
-// P213: pixel-clock-local 2-bank frame staging + atomic vertical-boundary
+// P214: reset-scrubbed pixel-clock 2-bank staging + atomic VBlank
 // display publication. Full frame transport comes from the P212 Gray FIFO.
 // Duplicate COMPLETE source epochs are drained without being displayed
 // multiple times; only a completely received new epoch can swap at VBlank.
@@ -37,11 +37,20 @@ module a0_p213_atomic_pixel_raster #(
   logic [31:0] ingest_epoch_q;
   logic ingest_skip_q,ingest_bank_q,local_fault_q;
   logic [15:0] duplicate_frames_q;
+  logic [9:0] scrub_addr_q;
+  logic scrub_done_q;
+  wire bank_scrub_write=!scrub_done_q;
+  wire bank0_write=bank_scrub_write ||
+       (consume && !bad_sample && !skip_ingest && !target_bank);
+  wire bank1_write=bank_scrub_write ||
+       (consume && !bad_sample && !skip_ingest && target_bank);
+  wire [9:0] bank_write_addr=bank_scrub_write ? scrub_addr_q : src_index;
+  wire [47:0] bank_write_data=bank_scrub_write ? 48'd0 : src_data;
   wire src_valid,src_fault,src_start,src_end;
   wire [47:0] src_data;
   wire [9:0] src_index;
   wire [31:0] src_epoch;
-  wire consume=src_valid && !local_fault_q && !src_fault;
+  wire consume=src_valid && scrub_done_q && !local_fault_q && !src_fault;
   wire first_ingest=(ingest_index_q==10'd0);
   wire last_ingest=(ingest_index_q==10'(WORDS-1));
   wire duplicate_start=
@@ -64,7 +73,7 @@ module a0_p213_atomic_pixel_raster #(
        active && !pixel_fault;
   wire [9:0] display_index=10'(v_q*H_ACTIVE+h_q);
   wire frame_boundary=tick && h_q==16'(HT-1) && v_q==16'(VT-1);
-  wire pixel_stream_ready=!local_fault_q && !src_fault;
+  wire pixel_stream_ready=scrub_done_q && !local_fault_q && !src_fault;
   assign pixel_fault=local_fault_q || src_fault;
   a0_p212_async_frame_queue #(
     .WORDS(WORDS),.FIFO_ADDR_BITS(FIFO_ADDR_BITS),
@@ -84,10 +93,8 @@ module a0_p213_atomic_pixel_raster #(
   // Explicit dual-port same-pixel-clock RAM semantics: write the staging
   // bank while displaying the immutable opposite front bank.
   always_ff @(posedge pixel_clk)begin
-    if(consume && !bad_sample && !skip_ingest)begin
-      if(target_bank)frame1[src_index]<=src_data;
-      else frame0[src_index]<=src_data;
-    end
+    if(bank0_write)frame0[bank_write_addr]<=bank_write_data;
+    if(bank1_write)frame1[bank_write_addr]<=bank_write_data;
     if(prefetch && front_bank_q)front_read1_q<=frame1[display_index];
     if(prefetch && !front_bank_q)front_read0_q<=frame0[display_index];
   end
@@ -99,10 +106,15 @@ module a0_p213_atomic_pixel_raster #(
       ingest_index_q<=0;ingest_epoch_q<=0;
       ingest_skip_q<=0;ingest_bank_q<=0;
       local_fault_q<=0;duplicate_frames_q<=0;
+      scrub_addr_q<=0;scrub_done_q<=0;
       pixel_ce<=0;video_de<=0;video_hsync<=1;video_vsync<=1;
       video_pixel<=0;
     end else begin
       pixel_ce<=0;
+      if(!scrub_done_q)begin
+        if(scrub_addr_q==10'(WORDS-1))scrub_done_q<=1;
+        else scrub_addr_q<=scrub_addr_q+10'd1;
+      end
       if(src_fault)local_fault_q<=1;
       if(consume)begin
         if(bad_sample)local_fault_q<=1;
