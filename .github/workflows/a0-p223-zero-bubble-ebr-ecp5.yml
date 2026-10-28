@@ -1,0 +1,797 @@
+name: A0-X P223 zero-bubble EBR FIFO and physical route
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/display/a0_p223_zero_bubble_raster.sv'
+      - 'A0-GPU/tests/rtl/a0_p223_zero_bubble_fifo_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p223_saturated_split_queue_tb.sv'
+      - 'A0-GPU/docs/P223-ZERO-BUBBLE-EBR-FIFO.md'
+      - '.github/workflows/a0-p223-zero-bubble-ebr-ecp5.yml'
+      - 'A0-GPU/tests/rtl/a0_p222_fifo_full_mutation_proof.py'
+      - 'A0-GPU/docs/P222-FIFO-SATURATION-NEGATIVE-PROOF.md'
+      - '.github/workflows/a0-p222-fifo-saturation-negative-ecp5.yml'
+      - 'A0-GPU/tests/rtl/a0_p221_saturated_split_queue_tb.sv'
+      - 'A0-GPU/docs/P221-SATURATED-CLOCK-CROSSING.md'
+      - '.github/workflows/a0-p221-saturated-cdc-ecp5.yml'
+      - 'A0-GPU/tests/rtl/a0_p220_live_reset_mutation_proof.py'
+      - 'A0-GPU/docs/P220-DYNAMIC-LIVE-RESET-MUTATIONS.md'
+      - '.github/workflows/a0-p220-dynamic-live-reset-ecp5.yml'
+      - 'A0-GPU/tests/rtl/a0_p219_clock_skew_raster_tb.sv'
+      - 'A0-GPU/docs/P219-FULL-RASTER-CLOCK-SKEW-RESET.md'
+      - '.github/workflows/a0-p219-clock-skew-ecp5.yml'
+      - 'A0-GPU/tests/rtl/a0_p218_cdc_inventory_gate.py'
+      - 'A0-GPU/constraints/p218_experimental_clock_contract.json'
+      - 'A0-GPU/docs/P218-SCOPED-CDC-INVENTORY.md'
+      - '.github/workflows/a0-p218-cdc-inventory-ecp5.yml'
+      - 'A0-GPU/tests/rtl/a0_p217_adversarial_reset_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p217_reset_mutation_guard.py'
+      - 'A0-GPU/docs/P217-ADVERSARIAL-CDC-RESET-GATES.md'
+      - '.github/workflows/a0-p217-adversarial-cdc-ecp5.yml'
+      - 'A0-GPU/rtl/display/a0_p216_domain_local_reset_raster.sv'
+      - 'A0-GPU/tests/rtl/a0_p216_split_reset_supervisor_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p216_domain_local_reset_raster_tb.sv'
+      - 'A0-GPU/docs/P216-DOMAIN-LOCAL-RESET-RELEASE.md'
+      - '.github/workflows/a0-p216-domain-local-reset-ecp5.yml'
+      - 'A0-GPU/rtl/display/a0_p215_supervised_pixel_raster.sv'
+      - 'A0-GPU/tests/rtl/a0_p215_dual_clock_reset_supervisor_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p215_supervised_pixel_raster_tb.sv'
+      - 'A0-GPU/docs/P215-DUAL-CLOCK-RESET-SUPERVISOR.md'
+      - '.github/workflows/a0-p215-supervised-reset-ecp5.yml'
+      - 'A0-GPU/tests/rtl/a0_p214_pixel_ebr_scrub_tb.sv'
+      - 'A0-GPU/docs/P214-PIXEL-EBR-RESET-SCRUB.md'
+      - '.github/workflows/a0-p214-pixel-ebr-scrub-ecp5.yml'
+      - 'A0-GPU/rtl/display/a0_p213_atomic_pixel_raster.sv'
+      - 'A0-GPU/tests/rtl/a0_p213_atomic_pixel_raster_tb.sv'
+      - 'A0-GPU/docs/P213-ATOMIC-PIXEL-DOMAIN-RASTER.md'
+      - '.github/workflows/a0-p213-atomic-raster-ecp5.yml'
+      - 'A0-GPU/rtl/display/a0_p212_gray_async_fifo.sv'
+      - 'A0-GPU/rtl/display/a0_p212_async_frame_queue.sv'
+      - 'A0-GPU/tests/rtl/a0_p212_gray_async_fifo_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p212_async_frame_queue_tb.sv'
+      - 'A0-GPU/docs/P212-GRAY-CDC-PIXEL-QUEUE.md'
+      - '.github/workflows/a0-p212-gray-cdc-ecp5.yml'
+      - 'A0-GPU/rtl/display/a0_p211_bounded_raster_timing.sv'
+      - 'A0-GPU/tests/rtl/a0_p211_bounded_raster_timing_tb.sv'
+      - 'A0-GPU/docs/P211-BOUNDED-RASTER-TIMING.md'
+      - '.github/workflows/a0-p211-bounded-raster-ecp5.yml'
+      - 'A0-GPU/rtl/display/a0_p210_frame_boundary_stream.sv'
+      - 'A0-GPU/tests/rtl/a0_p210_frame_boundary_stream_tb.sv'
+      - 'A0-GPU/docs/P210-FRAME-BOUNDARY-PIXEL-STREAM.md'
+      - '.github/workflows/a0-p210-frame-boundary-ecp5.yml'
+      - 'A0-GPU/rtl/display/a0_p209_independent_scanout.sv'
+      - 'A0-GPU/tests/rtl/a0_p209_independent_scanout_tb.sv'
+      - 'A0-GPU/docs/P209-INDEPENDENT-EPOCH-SCANOUT.md'
+      - '.github/workflows/a0-p209-independent-scanout-ecp5.yml'
+      - 'A0-GPU/rtl/memory/a0_p208_frame_publication_fence.sv'
+      - 'A0-GPU/tests/rtl/a0_p208_frame_publication_tb.sv'
+      - 'A0-GPU/docs/P208-VERIFIED-FRAME-PUBLICATION-FENCE.md'
+      - '.github/workflows/a0-p208-frame-publication-ecp5.yml'
+      - 'A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv'
+      - 'A0-GPU/tests/rtl/a0_p207_two_bram_banks_tb.sv'
+      - 'A0-GPU/docs/P207-TWO-INDEPENDENT-EBR-BANKS.md'
+      - '.github/workflows/a0-p207-two-onchip-banks-ecp5.yml'
+      - 'A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv'
+      - 'A0-GPU/tests/rtl/a0_p206_committed_bram_tb.sv'
+      - 'A0-GPU/docs/P206-ONCHIP-COMMITTED-BRAM.md'
+      - '.github/workflows/a0-p206-onchip-committed-bram-ecp5.yml'
+      - 'A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv'
+      - 'A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv'
+      - 'A0-GPU/tests/rtl/a0_p205_narrow_mailbox_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p203_tagged_p175_epoch_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p203_tagged_bridge_fault_tb.sv'
+      - 'A0-GPU/tests/rtl/models/a0_p203_tagged_sim_controller.sv'
+      - 'A0-GPU/docs/P205-NARROW-P203-PHYSICAL-MAILBOX.md'
+      - '.github/workflows/a0-p205-narrow-mailbox-ecp5.yml'
+      - 'A0-GPU/rtl/memory/a0_p200_dual_bank_word_router.sv'
+      - 'A0-GPU/rtl/memory/a0_p199_atomic_frame_bank_epoch.sv'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/display/a0_p223_zero_bubble_raster.sv'
+      - 'A0-GPU/tests/rtl/a0_p223_zero_bubble_fifo_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p223_saturated_split_queue_tb.sv'
+      - 'A0-GPU/docs/P223-ZERO-BUBBLE-EBR-FIFO.md'
+      - '.github/workflows/a0-p223-zero-bubble-ebr-ecp5.yml'
+      - 'A0-GPU/tests/rtl/a0_p222_fifo_full_mutation_proof.py'
+      - 'A0-GPU/docs/P222-FIFO-SATURATION-NEGATIVE-PROOF.md'
+      - '.github/workflows/a0-p222-fifo-saturation-negative-ecp5.yml'
+      - 'A0-GPU/tests/rtl/a0_p221_saturated_split_queue_tb.sv'
+      - 'A0-GPU/docs/P221-SATURATED-CLOCK-CROSSING.md'
+      - '.github/workflows/a0-p221-saturated-cdc-ecp5.yml'
+      - 'A0-GPU/tests/rtl/a0_p220_live_reset_mutation_proof.py'
+      - 'A0-GPU/docs/P220-DYNAMIC-LIVE-RESET-MUTATIONS.md'
+      - '.github/workflows/a0-p220-dynamic-live-reset-ecp5.yml'
+      - 'A0-GPU/tests/rtl/a0_p219_clock_skew_raster_tb.sv'
+      - 'A0-GPU/docs/P219-FULL-RASTER-CLOCK-SKEW-RESET.md'
+      - '.github/workflows/a0-p219-clock-skew-ecp5.yml'
+      - 'A0-GPU/tests/rtl/a0_p218_cdc_inventory_gate.py'
+      - 'A0-GPU/constraints/p218_experimental_clock_contract.json'
+      - 'A0-GPU/docs/P218-SCOPED-CDC-INVENTORY.md'
+      - '.github/workflows/a0-p218-cdc-inventory-ecp5.yml'
+      - 'A0-GPU/tests/rtl/a0_p217_adversarial_reset_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p217_reset_mutation_guard.py'
+      - 'A0-GPU/docs/P217-ADVERSARIAL-CDC-RESET-GATES.md'
+      - '.github/workflows/a0-p217-adversarial-cdc-ecp5.yml'
+      - 'A0-GPU/rtl/display/a0_p216_domain_local_reset_raster.sv'
+      - 'A0-GPU/tests/rtl/a0_p216_split_reset_supervisor_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p216_domain_local_reset_raster_tb.sv'
+      - 'A0-GPU/docs/P216-DOMAIN-LOCAL-RESET-RELEASE.md'
+      - '.github/workflows/a0-p216-domain-local-reset-ecp5.yml'
+      - 'A0-GPU/rtl/display/a0_p215_supervised_pixel_raster.sv'
+      - 'A0-GPU/tests/rtl/a0_p215_dual_clock_reset_supervisor_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p215_supervised_pixel_raster_tb.sv'
+      - 'A0-GPU/docs/P215-DUAL-CLOCK-RESET-SUPERVISOR.md'
+      - '.github/workflows/a0-p215-supervised-reset-ecp5.yml'
+      - 'A0-GPU/tests/rtl/a0_p214_pixel_ebr_scrub_tb.sv'
+      - 'A0-GPU/docs/P214-PIXEL-EBR-RESET-SCRUB.md'
+      - '.github/workflows/a0-p214-pixel-ebr-scrub-ecp5.yml'
+      - 'A0-GPU/rtl/display/a0_p213_atomic_pixel_raster.sv'
+      - 'A0-GPU/tests/rtl/a0_p213_atomic_pixel_raster_tb.sv'
+      - 'A0-GPU/docs/P213-ATOMIC-PIXEL-DOMAIN-RASTER.md'
+      - '.github/workflows/a0-p213-atomic-raster-ecp5.yml'
+      - 'A0-GPU/rtl/display/a0_p212_gray_async_fifo.sv'
+      - 'A0-GPU/rtl/display/a0_p212_async_frame_queue.sv'
+      - 'A0-GPU/tests/rtl/a0_p212_gray_async_fifo_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p212_async_frame_queue_tb.sv'
+      - 'A0-GPU/docs/P212-GRAY-CDC-PIXEL-QUEUE.md'
+      - '.github/workflows/a0-p212-gray-cdc-ecp5.yml'
+      - 'A0-GPU/rtl/display/a0_p211_bounded_raster_timing.sv'
+      - 'A0-GPU/tests/rtl/a0_p211_bounded_raster_timing_tb.sv'
+      - 'A0-GPU/docs/P211-BOUNDED-RASTER-TIMING.md'
+      - '.github/workflows/a0-p211-bounded-raster-ecp5.yml'
+      - 'A0-GPU/rtl/display/a0_p210_frame_boundary_stream.sv'
+      - 'A0-GPU/tests/rtl/a0_p210_frame_boundary_stream_tb.sv'
+      - 'A0-GPU/docs/P210-FRAME-BOUNDARY-PIXEL-STREAM.md'
+      - '.github/workflows/a0-p210-frame-boundary-ecp5.yml'
+      - 'A0-GPU/rtl/display/a0_p209_independent_scanout.sv'
+      - 'A0-GPU/tests/rtl/a0_p209_independent_scanout_tb.sv'
+      - 'A0-GPU/docs/P209-INDEPENDENT-EPOCH-SCANOUT.md'
+      - '.github/workflows/a0-p209-independent-scanout-ecp5.yml'
+      - 'A0-GPU/rtl/memory/a0_p208_frame_publication_fence.sv'
+      - 'A0-GPU/tests/rtl/a0_p208_frame_publication_tb.sv'
+      - 'A0-GPU/docs/P208-VERIFIED-FRAME-PUBLICATION-FENCE.md'
+      - '.github/workflows/a0-p208-frame-publication-ecp5.yml'
+      - 'A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv'
+      - 'A0-GPU/tests/rtl/a0_p207_two_bram_banks_tb.sv'
+      - 'A0-GPU/docs/P207-TWO-INDEPENDENT-EBR-BANKS.md'
+      - '.github/workflows/a0-p207-two-onchip-banks-ecp5.yml'
+      - 'A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv'
+      - 'A0-GPU/tests/rtl/a0_p206_committed_bram_tb.sv'
+      - 'A0-GPU/docs/P206-ONCHIP-COMMITTED-BRAM.md'
+      - '.github/workflows/a0-p206-onchip-committed-bram-ecp5.yml'
+      - 'A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv'
+      - 'A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv'
+      - 'A0-GPU/tests/rtl/a0_p205_narrow_mailbox_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p203_tagged_p175_epoch_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p203_tagged_bridge_fault_tb.sv'
+      - '.github/workflows/a0-p205-narrow-mailbox-ecp5.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p223-zero-bubble-physical-route:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual Icarus, Yosys and nextpnr ECP5
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y iverilog yosys nextpnr-ecp5
+      - name: Prove zero-bubble P223 physical FIFO read throughput against unchanged P216
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P223/rtl
+          for reverse in 0 1; do
+            iverilog -g2012 -Wall -s a0_p223_zero_bubble_fifo_tb \
+              -Pa0_p223_zero_bubble_fifo_tb.REVERSE="$reverse" \
+              -o "EVIDENCE/P223/rtl/p223_zero_bubble_${reverse}.vvp" \
+              A0-GPU/rtl/display/a0_p216_domain_local_reset_raster.sv \
+              A0-GPU/rtl/display/a0_p223_zero_bubble_raster.sv \
+              A0-GPU/tests/rtl/a0_p223_zero_bubble_fifo_tb.sv
+            timeout 60s vvp "EVIDENCE/P223/rtl/p223_zero_bubble_${reverse}.vvp" \
+              | tee "EVIDENCE/P223/rtl/p223_zero_bubble_${reverse}.log"
+            grep -q "^P223_ZERO_BUBBLE_FIFO_PASS reverse=$reverse words=32 old_last_edge=62 new_last_edge=31 consecutive=16 stable_stall=1 async_reset_ns=2 stale_replay=0$" \
+              "EVIDENCE/P223/rtl/p223_zero_bubble_${reverse}.log"
+          done
+      - name: Verify optimized P223 FIFO transports real committed EBR frames under saturation
+        run: |
+          set -euo pipefail
+          for size in 8 1024; do
+            for mode in 0 1; do
+              iverilog -g2012 -Wall -s a0_p223_saturated_split_queue_tb \
+                -Pa0_p223_saturated_split_queue_tb.WORDS="$size" \
+                -Pa0_p223_saturated_split_queue_tb.MODE="$mode" \
+                -o "EVIDENCE/P223/rtl/p223_full_${size}_${mode}.vvp" \
+                A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
+                A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv \
+                A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv \
+                A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv \
+                A0-GPU/rtl/memory/a0_p208_frame_publication_fence.sv \
+                A0-GPU/rtl/display/a0_p209_independent_scanout.sv \
+                A0-GPU/rtl/display/a0_p210_frame_boundary_stream.sv \
+                A0-GPU/rtl/display/a0_p223_zero_bubble_raster.sv \
+                A0-GPU/tests/rtl/a0_p223_saturated_split_queue_tb.sv
+              timeout 600s vvp "EVIDENCE/P223/rtl/p223_full_${size}_${mode}.vvp" \
+                | tee "EVIDENCE/P223/rtl/p223_full_${size}_${mode}.log"
+              grep -q "^P223_SATURATED_CDC_PASS words=$size mode=$mode fifo_depth=8 full=1 stall_pixel_edges=24 old_frames=[1-9][0-9]* second_epoch=1 indexed=1 boundary=1 reset_full=1 stale_replay=0$" \
+                "EVIDENCE/P223/rtl/p223_full_${size}_${mode}.log"
+            done
+          done
+      - name: Verify four positive real saturated FIFO baselines and reject 24 compiling data-path mutants
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P223/mutation
+          python3 A0-GPU/tests/rtl/a0_p222_fifo_full_mutation_proof.py \
+            --output EVIDENCE/P223/mutation/first_failures.json \
+            | tee EVIDENCE/P223/mutation/first_failures.log
+          grep -q '^P222_FIFO_MUTATION_PROOF_PASS baselines=4 dynamic_mutants=24 compilation_failures=0 escaped=0 board_signoff=0 formal_cdc=0$' \
+            EVIDENCE/P223/mutation/first_failures.log
+          test "$(grep -c '^P222_POSITIVE_BASELINE_PASS words=' EVIDENCE/P223/mutation/first_failures.log)" -eq 4
+          test "$(grep -c '^P222_DYNAMIC_MUTATION_REJECT name=' EVIDENCE/P223/mutation/first_failures.log)" -eq 24
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('EVIDENCE/P223/mutation/first_failures.json').read_text())
+          assert len(d['baselines']) == 4
+          assert len(d['rejected_mutants']) == 24
+          assert len({m['name'] for m in d['rejected_mutants']}) == 6
+          assert all(m['compiled'] and m['rejected_by_hdl_fatal'] for m in d['rejected_mutants'])
+          assert not d['board_timing_signoff'] and not d['formal_cdc_signoff']
+          PY
+
+      - name: Saturate P216 split-reset FIFO with real committed EBR frames at both clock ratios
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P223/rtl
+          for size in 8 1024; do
+            for mode in 0 1; do
+              iverilog -g2012 -Wall -s a0_p221_saturated_split_queue_tb \
+                -Pa0_p221_saturated_split_queue_tb.WORDS="$size" \
+                -Pa0_p221_saturated_split_queue_tb.MODE="$mode" \
+                -o "EVIDENCE/P223/rtl/p221_full_${size}_${mode}.vvp" \
+                A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
+                A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv \
+                A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv \
+                A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv \
+                A0-GPU/rtl/memory/a0_p208_frame_publication_fence.sv \
+                A0-GPU/rtl/display/a0_p209_independent_scanout.sv \
+                A0-GPU/rtl/display/a0_p210_frame_boundary_stream.sv \
+                A0-GPU/rtl/display/a0_p216_domain_local_reset_raster.sv \
+                A0-GPU/tests/rtl/a0_p221_saturated_split_queue_tb.sv
+              timeout 600s vvp "EVIDENCE/P223/rtl/p221_full_${size}_${mode}.vvp" \
+                | tee "EVIDENCE/P223/rtl/p221_full_${size}_${mode}.log"
+              grep -q "^P221_SATURATED_CDC_PASS words=$size mode=$mode fifo_depth=8 full=1 stall_pixel_edges=24 old_frames=[1-9][0-9]* second_epoch=1 indexed=1 boundary=1 reset_full=1 stale_replay=0$" \
+                "EVIDENCE/P223/rtl/p221_full_${size}_${mode}.log"
+            done
+          done
+
+      - name: Prove P175 real frames pass two tagged write-commit bridges
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P223/rtl
+          sources=(
+            A0-GPU/rtl/texture/a0_p156_nearest_texture.sv
+            A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv
+            A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv
+            A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv
+            A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv
+            A0-GPU/rtl/graphics/a0_p68_depth_compare.sv
+            A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv
+            A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv
+            A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv
+            A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv
+            A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv
+            A0-GPU/rtl/graphics/a0_p166_perspective_vertex_uv.sv
+            A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv
+            A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv
+            A0-GPU/rtl/graphics/a0_p190_tiled_screen_uv.sv
+            A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv
+            A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv
+            A0-GPU/rtl/memory/a0_p195_external_pixel_write_queue.sv
+            A0-GPU/rtl/memory/a0_p197_external_word_port_arbiter.sv
+            A0-GPU/rtl/memory/a0_p198_p175_frame_snapshot_export.sv
+            A0-GPU/rtl/memory/a0_p199_atomic_frame_bank_epoch.sv
+            A0-GPU/rtl/memory/a0_p200_dual_bank_word_router.sv
+            A0-GPU/rtl/memory/a0_p201_automatic_frame_epoch_sequencer.sv
+            A0-GPU/rtl/memory/a0_p202_bounded_bank_port_guard.sv
+            A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv
+            A0-GPU/tests/rtl/models/a0_p203_tagged_sim_controller.sv
+            A0-GPU/tests/rtl/models/a0_p196_external_word_memory_model.sv
+          )
+          iverilog -g2012 -Wall -s a0_p203_tagged_p175_epoch_tb \
+            -o EVIDENCE/P223/rtl/p203_full.vvp \
+            "${sources[@]}" A0-GPU/tests/rtl/a0_p203_tagged_p175_epoch_tb.sv
+          timeout 1200s vvp EVIDENCE/P223/rtl/p203_full.vvp \
+            | tee EVIDENCE/P223/rtl/p203_full.log
+          grep -q '^P203_TAGGED_P175_EPOCH_PASS frame=256x256 epochs=2 exported=131072 old_reads=200 auto_begin=1 auto_seal=1 atomic_publish=1 reset_fail_closed=1$' \
+            EVIDENCE/P223/rtl/p203_full.log
+      - name: Fault-inject missing and mismatched tagged controller acknowledgements
+        run: |
+          set -euo pipefail
+          iverilog -g2012 -Wall -s a0_p203_tagged_bridge_fault_tb \
+            -o EVIDENCE/P223/rtl/p203_negative.vvp \
+            A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
+            A0-GPU/tests/rtl/a0_p203_tagged_bridge_fault_tb.sv
+          timeout 60s vvp EVIDENCE/P223/rtl/p203_negative.vvp \
+            | tee EVIDENCE/P223/rtl/p203_negative.log
+          grep -q '^P203_TAGGED_BRIDGE_FAULT_PASS flush_barrier=1 read_tag=1 write_commit_only=1 wrong_tag=1 read_timeout=1 one_error=1 late_quarantine=1 write_timeout=1 mutated_write=1 unsolicited=1 wrong_bank=1 failed_write=1$' \
+            EVIDENCE/P223/rtl/p203_negative.log
+      - name: Synthesize tagged controller bridge and require zero structural problems
+        run: |
+          set -euo pipefail
+          yosys -Q -T -p 'read_verilog -sv A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv; hierarchy -check -top a0_p203_tagged_controller_bridge; synth -top a0_p203_tagged_controller_bridge; check -assert; stat' \
+            | tee EVIDENCE/P223/rtl/p203_yosys.log
+          grep -q 'Found and reported 0 problems.' EVIDENCE/P223/rtl/p203_yosys.log
+          grep -q '=== a0_p203_tagged_controller_bridge ===' EVIDENCE/P223/rtl/p203_yosys.log
+      - name: Prove actual narrow mailbox transaction and all negative guards
+        run: |
+          set -euo pipefail
+          iverilog -g2012 -Wall -s a0_p205_narrow_mailbox_tb \
+            -o EVIDENCE/P223/rtl/p205_mailbox.vvp \
+            A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
+            A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv \
+            A0-GPU/tests/rtl/models/a0_p196_external_word_memory_model.sv \
+            A0-GPU/tests/rtl/a0_p205_narrow_mailbox_tb.sv
+          timeout 90s vvp EVIDENCE/P223/rtl/p205_mailbox.vvp \
+            | tee EVIDENCE/P223/rtl/p205_mailbox.log
+          grep -q '^P205_NARROW_MAILBOX_PASS io_bits=54 flush=1 byte_write=1 commit_ack=1 byte_read=1 readback=1 partial_reject=1 wrong_tag=1 wrong_bank=1 duplicate_kick=1 incomplete_reply=1$' \
+            EVIDENCE/P223/rtl/p205_mailbox.log
+      - name: Run end-to-end physical RTL BRAM write/read/reset/negative proof
+        run: |
+          set -euo pipefail
+          iverilog -g2012 -Wall -s a0_p206_committed_bram_tb \
+            -o EVIDENCE/P223/rtl/p206_bram.vvp \
+            A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
+            A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv \
+            A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv \
+            A0-GPU/tests/rtl/a0_p206_committed_bram_tb.sv
+          timeout 90s vvp EVIDENCE/P223/rtl/p206_bram.vvp \
+            | tee EVIDENCE/P223/rtl/p206_bram.log
+          grep -q '^P206_ONCHIP_BRAM_PASS pins=29 words=8 scrub=1 reset_zero=1 write_commit=1 byte_readback=1 two_addresses=1 partial_reject=1 wrong_bank=1$' \
+            EVIDENCE/P223/rtl/p206_bram.log
+      - name: Prove two independently committed physical EBR banks at 8 and 1024 words
+        run: |
+          set -euo pipefail
+          for size in 8 1024; do
+            iverilog -g2012 -Wall -s a0_p207_two_bram_banks_tb \
+              -Pa0_p207_two_bram_banks_tb.WORDS="$size" \
+              -o "EVIDENCE/P223/rtl/p207_banks_$size.vvp" \
+              A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
+              A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv \
+              A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv \
+              A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv \
+              A0-GPU/tests/rtl/a0_p207_two_bram_banks_tb.sv
+            timeout 300s vvp "EVIDENCE/P223/rtl/p207_banks_$size.vvp" \
+              | tee "EVIDENCE/P223/rtl/p207_banks_$size.log"
+            grep -q "^P207_DUAL_BRAM_PASS words=$size pins=29 banks=2 scrub=1 isolated=1 edge=1 switch_stage_reject=1 invalid_selector=1 active_switch_reject=1$" \
+              "EVIDENCE/P223/rtl/p207_banks_$size.log"
+          done
+      - name: Prove full per-address COMMIT coverage and two fenced frames at 8 and 1024 words
+        run: |
+          set -euo pipefail
+          for size in 8 1024; do
+            iverilog -g2012 -Wall -s a0_p208_frame_publication_tb \
+              -Pa0_p208_frame_publication_tb.WORDS="$size" \
+              -o "EVIDENCE/P223/rtl/p208_fence_$size.vvp" \
+              A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
+              A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv \
+              A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv \
+              A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv \
+              A0-GPU/rtl/memory/a0_p208_frame_publication_fence.sv \
+              A0-GPU/tests/rtl/a0_p208_frame_publication_tb.sv
+            timeout 600s vvp "EVIDENCE/P223/rtl/p208_fence_$size.vvp" \
+              | tee "EVIDENCE/P223/rtl/p208_fence_$size.log"
+            grep -q "^P208_FRAME_FENCE_PASS words=$size pins=29 banks=2 unique_commit=1 partial_reject=1 epochs=2 immutable_front=1 reset_scrub=1$" \
+              "EVIDENCE/P223/rtl/p208_fence_$size.log"
+          done
+      - name: Verify real concurrent committed pixel readout while producer writes
+        run: |
+          set -euo pipefail
+          for size in 8 1024; do
+            iverilog -g2012 -Wall -s a0_p209_independent_scanout_tb \
+              -Pa0_p209_independent_scanout_tb.WORDS="$size" \
+              -o "EVIDENCE/P223/rtl/p209_scanout_$size.vvp" \
+              A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
+              A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv \
+              A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv \
+              A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv \
+              A0-GPU/rtl/memory/a0_p208_frame_publication_fence.sv \
+              A0-GPU/rtl/display/a0_p209_independent_scanout.sv \
+              A0-GPU/tests/rtl/a0_p209_independent_scanout_tb.sv
+            timeout 600s vvp "EVIDENCE/P223/rtl/p209_scanout_$size.vvp" \
+              | tee "EVIDENCE/P223/rtl/p209_scanout_$size.log"
+            grep -q "^P209_INDEPENDENT_SCANOUT_PASS words=$size primary_banks=2 shadow_banks=2 commit_mirror=1 parallel_scan=1 epochs=2 reset_scrub=1 front_lock=1$" \
+              "EVIDENCE/P223/rtl/p209_scanout_$size.log"
+          done
+      - name: Prove safe last-pixel publication across two complete physical EBR frames
+        run: |
+          set -euo pipefail
+          for size in 8 1024; do
+            iverilog -g2012 -Wall -s a0_p210_frame_boundary_stream_tb \
+              -Pa0_p210_frame_boundary_stream_tb.WORDS="$size" \
+              -o "EVIDENCE/P223/rtl/p210_stream_$size.vvp" \
+              A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
+              A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv \
+              A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv \
+              A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv \
+              A0-GPU/rtl/memory/a0_p208_frame_publication_fence.sv \
+              A0-GPU/rtl/display/a0_p209_independent_scanout.sv \
+              A0-GPU/rtl/display/a0_p210_frame_boundary_stream.sv \
+              A0-GPU/tests/rtl/a0_p210_frame_boundary_stream_tb.sv
+            timeout 600s vvp "EVIDENCE/P223/rtl/p210_stream_$size.vvp" \
+              | tee "EVIDENCE/P223/rtl/p210_stream_$size.log"
+            grep -q "^P210_FRAME_BOUNDARY_PASS words=$size full_frames=2 epochs=2 last_pixel_fence=1 stalled_pixel_stable=1 parallel_back_write=1 invalid_publish=1 reset_scrub=1$" \
+              "EVIDENCE/P223/rtl/p210_stream_$size.log"
+          done
+      - name: Prove two full P211 sync/blanking rasters and epoch-fenced physical EBR frames
+        run: |
+          set -euo pipefail
+          for size in 8 1024; do
+            iverilog -g2012 -Wall -s a0_p211_bounded_raster_timing_tb \
+              -Pa0_p211_bounded_raster_timing_tb.WORDS="$size" \
+              -o "EVIDENCE/P223/rtl/p211_raster_$size.vvp" \
+              A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
+              A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv \
+              A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv \
+              A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv \
+              A0-GPU/rtl/memory/a0_p208_frame_publication_fence.sv \
+              A0-GPU/rtl/display/a0_p209_independent_scanout.sv \
+              A0-GPU/rtl/display/a0_p210_frame_boundary_stream.sv \
+              A0-GPU/rtl/display/a0_p211_bounded_raster_timing.sv \
+              A0-GPU/tests/rtl/a0_p211_bounded_raster_timing_tb.sv
+            timeout 600s vvp "EVIDENCE/P223/rtl/p211_raster_$size.vvp" \
+              | tee "EVIDENCE/P223/rtl/p211_raster_$size.log"
+            grep -q "^P211_RASTER_TIMING_PASS words=$size div=64 frames=2 epochs=2 hsync=1 vsync=1 hblank=1 vblank=1 continuous_ce=1 queued_fence=1 front_lock=1 reset_scrub=1$" \
+              "EVIDENCE/P223/rtl/p211_raster_$size.log"
+          done
+      - name: Fault-inject a one-cycle raster rate faster than the physical EBR stream
+        run: |
+          set -euo pipefail
+          iverilog -g2012 -Wall -s a0_p211_bounded_raster_timing_tb \
+            -Pa0_p211_bounded_raster_timing_tb.WORDS=8 \
+            -Pa0_p211_bounded_raster_timing_tb.FAST=1 \
+            -o EVIDENCE/P223/rtl/p211_underflow.vvp \
+            A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
+            A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv \
+            A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv \
+            A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv \
+            A0-GPU/rtl/memory/a0_p208_frame_publication_fence.sv \
+            A0-GPU/rtl/display/a0_p209_independent_scanout.sv \
+            A0-GPU/rtl/display/a0_p210_frame_boundary_stream.sv \
+            A0-GPU/rtl/display/a0_p211_bounded_raster_timing.sv \
+            A0-GPU/tests/rtl/a0_p211_bounded_raster_timing_tb.sv
+          timeout 120s vvp EVIDENCE/P223/rtl/p211_underflow.vvp \
+            | tee EVIDENCE/P223/rtl/p211_underflow.log
+          grep -q '^P211_TIMING_UNDERFLOW_PASS words=8 div=1 sticky=1 black=1 reset=1$' \
+            EVIDENCE/P223/rtl/p211_underflow.log
+      - name: Prove true asynchronous Gray FIFO at two opposite clock ratios
+        run: |
+          set -euo pipefail
+          for reverse in 0 1; do
+            iverilog -g2012 -Wall -s a0_p212_gray_async_fifo_tb \
+              -Pa0_p212_gray_async_fifo_tb.REVERSE="$reverse" \
+              -o "EVIDENCE/P223/rtl/p212_fifo_$reverse.vvp" \
+              A0-GPU/rtl/display/a0_p212_gray_async_fifo.sv \
+              A0-GPU/tests/rtl/a0_p212_gray_async_fifo_tb.sv
+            timeout 120s vvp "EVIDENCE/P223/rtl/p212_fifo_$reverse.vvp" \
+              | tee "EVIDENCE/P223/rtl/p212_fifo_$reverse.log"
+            grep -q "^P212_ASYNC_FIFO_PASS reverse=$reverse depth=64 width=92 full=1 overflow_reject=1 stable=1 wrap=1 concurrent=1 reset_isolation=1$" \
+              "EVIDENCE/P223/rtl/p212_fifo_$reverse.log"
+          done
+      - name: Prove real committed EBR frames traverse async clock domain
+        run: |
+          set -euo pipefail
+          for size in 8 1024; do
+            iverilog -g2012 -Wall -s a0_p212_async_frame_queue_tb \
+              -Pa0_p212_async_frame_queue_tb.WORDS="$size" \
+              -o "EVIDENCE/P223/rtl/p212_cdc_$size.vvp" \
+              A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
+              A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv \
+              A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv \
+              A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv \
+              A0-GPU/rtl/memory/a0_p208_frame_publication_fence.sv \
+              A0-GPU/rtl/display/a0_p209_independent_scanout.sv \
+              A0-GPU/rtl/display/a0_p210_frame_boundary_stream.sv \
+              A0-GPU/rtl/display/a0_p212_gray_async_fifo.sv \
+              A0-GPU/rtl/display/a0_p212_async_frame_queue.sv \
+              A0-GPU/tests/rtl/a0_p212_async_frame_queue_tb.sv
+            timeout 600s vvp "EVIDENCE/P223/rtl/p212_cdc_$size.vvp" \
+              | tee "EVIDENCE/P223/rtl/p212_cdc_$size.log"
+            grep -q "^P212_REAL_FRAME_CDC_PASS words=$size fifo_depth=64 epochs=2 complete_old_frames=[1-9][0-9]* backpressure=1 epoch_atomic=1 reset_scrub=1$" \
+              "EVIDENCE/P223/rtl/p212_cdc_$size.log"
+          done
+      - name: Prove atomic pixel-clock raster over two physical EBR frame epochs
+        run: |
+          set -euo pipefail
+          for size in 8 1024; do
+            iverilog -g2012 -Wall -s a0_p213_atomic_pixel_raster_tb \
+              -Pa0_p213_atomic_pixel_raster_tb.WORDS="$size" \
+              -o "EVIDENCE/P223/rtl/p213_atomic_$size.vvp" \
+              A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
+              A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv \
+              A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv \
+              A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv \
+              A0-GPU/rtl/memory/a0_p208_frame_publication_fence.sv \
+              A0-GPU/rtl/display/a0_p209_independent_scanout.sv \
+              A0-GPU/rtl/display/a0_p210_frame_boundary_stream.sv \
+              A0-GPU/rtl/display/a0_p212_gray_async_fifo.sv \
+              A0-GPU/rtl/display/a0_p212_async_frame_queue.sv \
+              A0-GPU/rtl/display/a0_p213_atomic_pixel_raster.sv \
+              A0-GPU/tests/rtl/a0_p213_atomic_pixel_raster_tb.sv
+            timeout 600s vvp "EVIDENCE/P223/rtl/p213_atomic_$size.vvp" \
+              | tee "EVIDENCE/P223/rtl/p213_atomic_$size.log"
+            grep -q "^P213_ATOMIC_PIXEL_RASTER_PASS words=$size frames=2 epochs=2 dual_clock=1 vblank_swap=1 no_torn_frame=1 duplicate_drops=[1-9][0-9]* sync_blank=1 front_lock=1 reset_mask=1$" \
+              "EVIDENCE/P223/rtl/p213_atomic_$size.log"
+          done
+      - name: Prove every physical pixel EBR word zero after cold and post-use resets
+        run: |
+          set -euo pipefail
+          for size in 8 1024; do
+            iverilog -g2012 -Wall -s a0_p214_pixel_ebr_scrub_tb \
+              -Pa0_p214_pixel_ebr_scrub_tb.WORDS="$size" \
+              -o "EVIDENCE/P223/rtl/p214_scrub_$size.vvp" \
+              A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
+              A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv \
+              A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv \
+              A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv \
+              A0-GPU/rtl/memory/a0_p208_frame_publication_fence.sv \
+              A0-GPU/rtl/display/a0_p209_independent_scanout.sv \
+              A0-GPU/rtl/display/a0_p210_frame_boundary_stream.sv \
+              A0-GPU/rtl/display/a0_p212_gray_async_fifo.sv \
+              A0-GPU/rtl/display/a0_p212_async_frame_queue.sv \
+              A0-GPU/rtl/display/a0_p213_atomic_pixel_raster.sv \
+              A0-GPU/tests/rtl/a0_p214_pixel_ebr_scrub_tb.sv
+            timeout 600s vvp "EVIDENCE/P223/rtl/p214_scrub_$size.vvp" \
+              | tee "EVIDENCE/P223/rtl/p214_scrub_$size.log"
+            grep -q "^P214_PIXEL_EBR_SCRUB_PASS words=$size frames=2 epochs=2 dual_clock=1 vblank_swap=1 no_torn_frame=1 duplicate_drops=[1-9][0-9]* sync_blank=1 front_lock=1 scrub_full_banks=1 reset_mask=1$" \
+              "EVIDENCE/P223/rtl/p214_scrub_$size.log"
+          done
+      - name: Prove 2ns asynchronous reset pulses qualify both clock domains
+        run: |
+          set -euo pipefail
+          for reverse in 0 1; do
+            iverilog -g2012 -Wall -s a0_p215_dual_clock_reset_supervisor_tb \
+              -Pa0_p215_dual_clock_reset_supervisor_tb.REVERSE="$reverse" \
+              -o "EVIDENCE/P223/rtl/p215_supervisor_$reverse.vvp" \
+              A0-GPU/rtl/display/a0_p215_supervised_pixel_raster.sv \
+              A0-GPU/tests/rtl/a0_p215_dual_clock_reset_supervisor_tb.sv
+            timeout 120s vvp "EVIDENCE/P223/rtl/p215_supervisor_$reverse.vvp" \
+              | tee "EVIDENCE/P223/rtl/p215_supervisor_$reverse.log"
+            grep -q "^P215_SUPERVISOR_PASS reverse=$reverse short_pulses=6 async_assert=1 two_host_edges=1 two_pixel_edges=1 stopped_pixel_fail_closed=1$" \
+              "EVIDENCE/P223/rtl/p215_supervisor_$reverse.log"
+          done
+      - name: Prove both real pixel EBR banks scrub following a 2ns reset
+        run: |
+          set -euo pipefail
+          for size in 8 1024; do
+            iverilog -g2012 -Wall -s a0_p215_supervised_pixel_raster_tb \
+              -Pa0_p215_supervised_pixel_raster_tb.WORDS="$size" \
+              -o "EVIDENCE/P223/rtl/p215_supervised_$size.vvp" \
+              A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
+              A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv \
+              A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv \
+              A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv \
+              A0-GPU/rtl/memory/a0_p208_frame_publication_fence.sv \
+              A0-GPU/rtl/display/a0_p209_independent_scanout.sv \
+              A0-GPU/rtl/display/a0_p210_frame_boundary_stream.sv \
+              A0-GPU/rtl/display/a0_p212_gray_async_fifo.sv \
+              A0-GPU/rtl/display/a0_p212_async_frame_queue.sv \
+              A0-GPU/rtl/display/a0_p213_atomic_pixel_raster.sv \
+              A0-GPU/rtl/display/a0_p215_supervised_pixel_raster.sv \
+              A0-GPU/tests/rtl/a0_p215_supervised_pixel_raster_tb.sv
+            timeout 600s vvp "EVIDENCE/P223/rtl/p215_supervised_$size.vvp" \
+              | tee "EVIDENCE/P223/rtl/p215_supervised_$size.log"
+            grep -q "^P215_SUPERVISED_FRAME_PASS words=$size frames=2 epochs=2 dual_clock=1 vblank_swap=1 no_torn_frame=1 duplicate_drops=[1-9][0-9]* sync_blank=1 front_lock=1 scrub_full_banks=1 short_pulse_reset=1 reset_mask=1$" \
+              "EVIDENCE/P223/rtl/p215_supervised_$size.log"
+          done
+      - name: Prove P216 reset release only at each local clock edge
+        run: |
+          set -euo pipefail
+          for reverse in 0 1; do
+            iverilog -g2012 -Wall -s a0_p216_split_reset_supervisor_tb \
+              -Pa0_p216_split_reset_supervisor_tb.REVERSE="$reverse" \
+              -o "EVIDENCE/P223/rtl/p216_local_release_$reverse.vvp" \
+              A0-GPU/rtl/display/a0_p216_domain_local_reset_raster.sv \
+              A0-GPU/tests/rtl/a0_p216_split_reset_supervisor_tb.sv
+            timeout 120s vvp "EVIDENCE/P223/rtl/p216_local_release_$reverse.vvp" \
+              | tee "EVIDENCE/P223/rtl/p216_local_release_$reverse.log"
+            grep -q "^P216_LOCAL_RELEASE_PASS reverse=$reverse short_pulses=6 async_assert=1 two_domains=1 local_clock_edge_only=1 remote_ready_synchronized=1 stopped_pixel_fail_closed=1$" \
+              "EVIDENCE/P223/rtl/p216_local_release_$reverse.log"
+          done
+      - name: Prove fully split P216 host-pixel EBR reset after two frame epochs
+        run: |
+          set -euo pipefail
+          for size in 8 1024; do
+            iverilog -g2012 -Wall -s a0_p216_domain_local_reset_raster_tb \
+              -Pa0_p216_domain_local_reset_raster_tb.WORDS="$size" \
+              -o "EVIDENCE/P223/rtl/p216_split_frame_$size.vvp" \
+              A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
+              A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv \
+              A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv \
+              A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv \
+              A0-GPU/rtl/memory/a0_p208_frame_publication_fence.sv \
+              A0-GPU/rtl/display/a0_p209_independent_scanout.sv \
+              A0-GPU/rtl/display/a0_p210_frame_boundary_stream.sv \
+              A0-GPU/rtl/display/a0_p216_domain_local_reset_raster.sv \
+              A0-GPU/tests/rtl/a0_p216_domain_local_reset_raster_tb.sv
+            timeout 600s vvp "EVIDENCE/P223/rtl/p216_split_frame_$size.vvp" \
+              | tee "EVIDENCE/P223/rtl/p216_split_frame_$size.log"
+            grep -q "^P216_DOMAIN_LOCAL_FRAME_PASS words=$size frames=2 epochs=2 dual_clock=1 vblank_swap=1 no_torn_frame=1 duplicate_drops=[1-9][0-9]* sync_blank=1 front_lock=1 scrub_full_banks=1 short_pulse_reset=1 reset_mask=1 local_edge_reset=1$" \
+              "EVIDENCE/P223/rtl/p216_split_frame_$size.log"
+          done
+      - name: Prove P219 full-frame EBR CDC across three independent clock ratios, including live-output reset
+        run: |
+          set -euo pipefail
+          for size in 8 1024; do
+            for mode in 0 1 2; do
+              case "$mode" in
+                0) host_half=4; pixel_half=7 ;;
+                1) host_half=7; pixel_half=4 ;;
+                2) host_half=5; pixel_half=6 ;;
+              esac
+              iverilog -g2012 -Wall -s a0_p219_clock_skew_raster_tb \
+                -Pa0_p219_clock_skew_raster_tb.WORDS="$size" \
+                -Pa0_p219_clock_skew_raster_tb.MODE="$mode" \
+                -o "EVIDENCE/P223/rtl/p219_clock_${size}_${mode}.vvp" \
+                A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
+                A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv \
+                A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv \
+                A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv \
+                A0-GPU/rtl/memory/a0_p208_frame_publication_fence.sv \
+                A0-GPU/rtl/display/a0_p209_independent_scanout.sv \
+                A0-GPU/rtl/display/a0_p210_frame_boundary_stream.sv \
+                A0-GPU/rtl/display/a0_p216_domain_local_reset_raster.sv \
+                A0-GPU/tests/rtl/a0_p219_clock_skew_raster_tb.sv
+              timeout 600s vvp "EVIDENCE/P223/rtl/p219_clock_${size}_${mode}.vvp" \
+                | tee "EVIDENCE/P223/rtl/p219_clock_${size}_${mode}.log"
+              if [ "$size" = 8 ]; then stop=1; else stop=0; fi
+              grep -q "^P219_CLOCK_SKEW_FRAME_PASS words=$size mode=$mode host_half_ns=$host_half pixel_half_ns=$pixel_half frames=2 epochs=2 no_torn_frame=1 vblank_swap=1 short_reset=1 live_clock_stop=$stop remote_ready_hold=$stop duplicate_drops=[1-9][0-9]*$" \
+                "EVIDENCE/P223/rtl/p219_clock_${size}_${mode}.log"
+            done
+          done
+
+      - name: Prove eighteen compilable P220 full-raster CDC/reset/data mutant failures
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P223/mutation
+          python3 A0-GPU/tests/rtl/a0_p220_live_reset_mutation_proof.py \
+            --output EVIDENCE/P223/mutation/first_failures.json \
+            | tee EVIDENCE/P223/mutation/first_failures.log
+          grep -q '^P220_LIVE_RESET_MUTATION_PROOF_PASS baselines=3 dynamic_mutants=18 compile_failures=0 escaped=0 board_signoff=0 formal_cdc=0$' \
+            EVIDENCE/P223/mutation/first_failures.log
+          test "$(grep -c '^P220_LIVE_RESET_BASELINE_PASS mode=' EVIDENCE/P223/mutation/first_failures.log)" -eq 3
+          test "$(grep -c '^P220_DYNAMIC_MUTATION_REJECT name=' EVIDENCE/P223/mutation/first_failures.log)" -eq 18
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path('EVIDENCE/P223/mutation/first_failures.json').read_text())
+          assert len(data['positive_baselines']) == 3
+          assert len(data['mutants']) == 18
+          assert len({m['name'] for m in data['mutants']}) == 6
+          assert all(m['compiled'] and m['rejected_by_hdl_fatal'] for m in data['mutants'])
+          assert not data['board_signoff'] and not data['formal_cdc_signoff']
+          PY
+
+      - name: Prove adversarial local-edge reset recovery with both clocks stopped in turn
+        run: |
+          set -euo pipefail
+          for reverse in 0 1; do
+            iverilog -g2012 -Wall -s a0_p217_adversarial_reset_tb \
+              -Pa0_p217_adversarial_reset_tb.REVERSE="$reverse" \
+              -o "EVIDENCE/P223/rtl/p217_adversarial_$reverse.vvp" \
+              A0-GPU/rtl/display/a0_p216_domain_local_reset_raster.sv \
+              A0-GPU/tests/rtl/a0_p217_adversarial_reset_tb.sv
+            timeout 120s vvp "EVIDENCE/P223/rtl/p217_adversarial_$reverse.vvp" \
+              | tee "EVIDENCE/P223/rtl/p217_adversarial_$reverse.log"
+            grep -q "^P217_ADVERSARIAL_RESET_PASS reverse=$reverse short_pulses=12 local_edge=1 two_remote_sync_stages=1 stopped_host=1 stopped_pixel=1 async_assert=1$" \
+              "EVIDENCE/P223/rtl/p217_adversarial_$reverse.log"
+          done
+      - name: Prove six bypassed RTL synchronizers and swapped FIFO reset fail
+        run: |
+          set -euo pipefail
+          python3 A0-GPU/tests/rtl/a0_p217_reset_mutation_guard.py \
+            | tee EVIDENCE/P223/rtl/p217_mutations.log
+          grep -q '^P217_CDC_MUTATION_GUARD_PASS dynamic_mutants=6 topology_mutants=1 baseline_rtl=1$' \
+            EVIDENCE/P223/rtl/p217_mutations.log
+          test "$(grep -c '^P217_MUTATION_REJECT name=' EVIDENCE/P223/rtl/p217_mutations.log)" -eq 7
+      - name: Inventory all direct two-clock register crossings and reject nine unsafe mutations
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P223/cdc
+          python3 A0-GPU/tests/rtl/a0_p218_cdc_inventory_gate.py \
+            --output EVIDENCE/P223/cdc/inventory.json \
+            | tee EVIDENCE/P223/cdc/source_audit.log
+          grep -q '^P218_CDC_INVENTORY_PASS direct_register_crossings=4 declared_protocol_crossings=2 total=6$' \
+            EVIDENCE/P223/cdc/source_audit.log
+          grep -q '^P218_CDC_NEGATIVE_PASS mutations=9 fail_closed=1$' \
+            EVIDENCE/P223/cdc/source_audit.log
+          test "$(grep -c '^P218_CDC_MUTATION_REJECT name=' EVIDENCE/P223/cdc/source_audit.log)" -eq 9
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path('EVIDENCE/P223/cdc/inventory.json').read_text())
+          assert len(data['crossings'])==6
+          assert data['mutation_rejections']==9
+          assert data['clock_contract']['board_timing_signoff'] is False
+          PY
+      - name: Physically route P216 two-clock EBRs under P218 audited contract
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P223/route
+          yosys -Q -T -p 'read_verilog -sv A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv A0-GPU/rtl/memory/a0_p208_frame_publication_fence.sv A0-GPU/rtl/display/a0_p209_independent_scanout.sv A0-GPU/rtl/display/a0_p210_frame_boundary_stream.sv A0-GPU/rtl/display/a0_p211_bounded_raster_timing.sv A0-GPU/rtl/display/a0_p212_gray_async_fifo.sv A0-GPU/rtl/display/a0_p212_async_frame_queue.sv A0-GPU/rtl/display/a0_p213_atomic_pixel_raster.sv A0-GPU/rtl/display/a0_p215_supervised_pixel_raster.sv A0-GPU/rtl/display/a0_p216_domain_local_reset_raster.sv; hierarchy -check -top a0_p216_domain_local_reset_raster; synth_ecp5 -top a0_p216_domain_local_reset_raster -json EVIDENCE/P223/route/netlist.json; check -assert; stat' \
+            2>&1 | tee EVIDENCE/P223/route/yosys_ecp5.log
+          grep -q 'Found and reported 0 problems.' EVIDENCE/P223/route/yosys_ecp5.log
+          timeout 1500s nextpnr-ecp5 --85k --package CABGA381 --speed 6 \
+            --json EVIDENCE/P223/route/netlist.json \
+            --textcfg EVIDENCE/P223/route/route.config \
+            --report EVIDENCE/P223/route/route.json \
+            --freq 10 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P223/route/nextpnr.log
+          python3 - <<'PY'
+          import collections,json
+          from pathlib import Path
+          p=Path('EVIDENCE/P223/route')
+          top=json.loads((p/'netlist.json').read_text())['modules']['a0_p216_domain_local_reset_raster']
+          pins=sum(len(v['bits']) for v in top['ports'].values())
+          cells=collections.Counter(v['type'] for v in top['cells'].values())
+          assert pins==83,('P216 top requires exactly 83 I/O bits',pins)
+          assert cells.get('DP16KD',0)>=21,('P216 must preserve 15 upstream EBR plus two scrubbed pixel-local banks',cells)
+          assert cells.get('LUT4',0)>0 and cells.get('TRELLIS_FF',0)>=4200,('missing pixel-domain staging control',cells)
+          assert not any(k.startswith('$') or k.startswith('a0_') or 'LATCH' in k.upper() for k in cells),('unmapped/blackbox/latch cells',cells)
+          fmax=json.loads((p/'route.json').read_text()).get('fmax',{})
+          assert fmax and all(v.get('achieved',0)>0 for v in fmax.values()),('no physical clock route',fmax)
+          assert any('host_clk' in k for k in fmax),('host clock absent from physical route',fmax)
+          assert any('pixel_clk' in k for k in fmax),('pixel clock absent from physical route',fmax)
+          achieved=min(v['achieved'] for v in fmax.values())
+          assert achieved>=10.0,('routed frequency below 10 MHz experimental floor',fmax)
+          print('P218_REAL_CDC_INVENTORY_ROUTE_PASS package=CABGA381 pins=%d EBR=%d LUT4=%d FF=%d MHz=%.2f'%(pins,cells['DP16KD'],cells['LUT4'],cells['TRELLIS_FF'],achieved))
+          PY
+      - name: Verify independently routed host and pixel clock contract
+        run: |
+          set -euo pipefail
+          python3 A0-GPU/tests/rtl/a0_p218_cdc_inventory_gate.py \
+            --route EVIDENCE/P223/route/route.json \
+            --output EVIDENCE/P223/cdc/inventory.json \
+            | tee EVIDENCE/P223/cdc/routed_audit.log
+          grep -q '^P218_DUAL_CLOCK_ROUTE_CONTRACT_PASS host_mhz=[0-9.]* pixel_mhz=[0-9.]* floor_mhz=10.00 board_signoff=0$' \
+            EVIDENCE/P223/cdc/routed_audit.log
+      - name: Independently synthesize and physically route the actual P223 zero-bubble FPGA raster
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P223/route223
+          yosys -Q -T -p 'read_verilog -sv A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv A0-GPU/rtl/memory/a0_p208_frame_publication_fence.sv A0-GPU/rtl/display/a0_p209_independent_scanout.sv A0-GPU/rtl/display/a0_p210_frame_boundary_stream.sv A0-GPU/rtl/display/a0_p223_zero_bubble_raster.sv; hierarchy -check -top a0_p223_domain_local_reset_raster; synth_ecp5 -top a0_p223_domain_local_reset_raster -json EVIDENCE/P223/route223/netlist.json; check -assert; stat' \
+            2>&1 | tee EVIDENCE/P223/route223/yosys_ecp5.log
+          grep -q 'Found and reported 0 problems.' EVIDENCE/P223/route223/yosys_ecp5.log
+          timeout 1500s nextpnr-ecp5 --85k --package CABGA381 --speed 6 \
+            --json EVIDENCE/P223/route223/netlist.json \
+            --textcfg EVIDENCE/P223/route223/route.config \
+            --report EVIDENCE/P223/route223/route.json \
+            --freq 10 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P223/route223/nextpnr.log
+          python3 - <<'PY'
+          import collections,json
+          from pathlib import Path
+          p=Path('EVIDENCE/P223/route223')
+          top=json.loads((p/'netlist.json').read_text())['modules']['a0_p223_domain_local_reset_raster']
+          pins=sum(len(v['bits']) for v in top['ports'].values())
+          cells=collections.Counter(v['type'] for v in top['cells'].values())
+          assert pins==83,('P223 requires the same 83 I/O bits',pins)
+          assert cells.get('DP16KD',0)>=21,('P223 must physically preserve the source + local pixel EBR',cells)
+          assert cells.get('LUT4',0)>0 and cells.get('TRELLIS_FF',0)>=4200,('P223 missing pixel-domain control',cells)
+          assert not any(k.startswith('$') or k.startswith('a0_') or 'LATCH' in k.upper() for k in cells),('P223 unmapped/blackbox/latch',cells)
+          fmax=json.loads((p/'route.json').read_text()).get('fmax',{})
+          assert any('host_clk' in k for k in fmax),('P223 host clock missing',fmax)
+          assert any('pixel_clk' in k for k in fmax),('P223 pixel clock missing',fmax)
+          assert all(v.get('achieved',0)>=10 for v in fmax.values()),('P223 physical clock below 10 MHz experimental floor',fmax)
+          host=min(v['achieved'] for k,v in fmax.items() if 'host_clk' in k)
+          pixel=min(v['achieved'] for k,v in fmax.items() if 'pixel_clk' in k)
+          print('P223_REAL_ECP5_ROUTE_PASS package=CABGA381 pins=%d EBR=%d LUT4=%d FF=%d host_mhz=%.2f pixel_mhz=%.2f board_signoff=0'%(pins,cells['DP16KD'],cells['LUT4'],cells['TRELLIS_FF'],host,pixel))
+          PY
+      - name: Preserve first-failure output without retries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p223-zero-bubble-ebr-evidence
+          path: EVIDENCE/P223
+          if-no-files-found: warn
