@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 // P225: end-to-end video over real EBRs with a registered FIFO-to-epoch
 // ingress stage and two complete independent pixel-domain frame epochs.
-module a0_p225_clock_skew_raster_tb #(
+module a0_p225_linear_scanout_raster_tb #(
   parameter integer WORDS=8,
   parameter integer MODE=0
 );
