@@ -271,6 +271,10 @@ module a0_p226_clock_skew_raster_tb #(
 
     if(invalid_guard_checks<1)
       $fatal(1,"P226 invalid-lane guard never exercised");
+    // Nonzero stale payload proves the valid gate, not a zeroed data lane,
+    // prevents old packets from becoming writes or frame publications.
+    if(stale_hold_samples<1)
+      $fatal(1,"P226 stale-nonzero valid-lane guard never exercised");
     $display("P226_UNMUXED_INGRESS_RASTER_PASS words=%0d mode=%0d host_half_ns=%0d pixel_half_ns=%0d frames=2 epochs=2 no_torn_frame=1 vblank_swap=1 short_reset=1 live_clock_stop=%0d remote_ready_hold=%0d duplicate_drops=%0d invalid_guard_checks=%0d stale_hold_samples=%0d",
       WORDS,MODE,HOST_HALF,PIXEL_HALF,(WORDS==8),(WORDS==8),saved_drops,
       invalid_guard_checks,stale_hold_samples);
