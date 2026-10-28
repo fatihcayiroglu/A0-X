@@ -1,0 +1,93 @@
+name: A0-X P201 automatic dual-frame snapshot epoch control
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/memory/a0_p201_automatic_frame_epoch_sequencer.sv'
+      - 'A0-GPU/tests/rtl/a0_p201_automatic_p175_epoch_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p201_automatic_epoch_fault_tb.sv'
+      - 'A0-GPU/docs/P201-AUTOMATIC-FRAME-EPOCH-SEQUENCER.md'
+      - '.github/workflows/a0-p201-automatic-frame-epoch.yml'
+      - 'A0-GPU/rtl/memory/a0_p200_dual_bank_word_router.sv'
+      - 'A0-GPU/rtl/memory/a0_p199_atomic_frame_bank_epoch.sv'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/memory/a0_p201_automatic_frame_epoch_sequencer.sv'
+      - 'A0-GPU/tests/rtl/a0_p201_automatic_p175_epoch_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p201_automatic_epoch_fault_tb.sv'
+      - '.github/workflows/a0-p201-automatic-frame-epoch.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p201-automatic-full-frame-epochs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual Icarus and Yosys
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y iverilog yosys
+      - name: Prove autonomous two-frame publication through actual P175 RTL
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P201/rtl
+          sources=(
+            A0-GPU/rtl/texture/a0_p156_nearest_texture.sv
+            A0-GPU/rtl/texture/a0_p158_bilinear_texture.sv
+            A0-GPU/rtl/shader/a0_p150_unorm_simd4_alu.sv
+            A0-GPU/rtl/shader/a0_p162_textured_microprogram.sv
+            A0-GPU/rtl/graphics/a0_triangle_coverage_p38.sv
+            A0-GPU/rtl/graphics/a0_p68_depth_compare.sv
+            A0-GPU/rtl/graphics/a0_p70_rgb_blend.sv
+            A0-GPU/rtl/graphics/a0_p138_dual_bank_framebuffer.sv
+            A0-GPU/rtl/graphics/a0_p139_xy_dual_pixel_port.sv
+            A0-GPU/rtl/graphics/a0_p144_dual_depth_blend_rmw.sv
+            A0-GPU/rtl/graphics/a0_p164_affine_vertex_uv.sv
+            A0-GPU/rtl/graphics/a0_p166_perspective_vertex_uv.sv
+            A0-GPU/rtl/graphics/a0_p163_programmed_fragment_core.sv
+            A0-GPU/rtl/graphics/a0_p163_packed_programmed_command_top.sv
+            A0-GPU/rtl/graphics/a0_p190_tiled_screen_uv.sv
+            A0-GPU/rtl/graphics/a0_p175_scaled_programmed_fragment_core.sv
+            A0-GPU/rtl/graphics/a0_p175_scaled_programmed_command_top.sv
+            A0-GPU/rtl/memory/a0_p195_external_pixel_write_queue.sv
+            A0-GPU/rtl/memory/a0_p197_external_word_port_arbiter.sv
+            A0-GPU/rtl/memory/a0_p198_p175_frame_snapshot_export.sv
+            A0-GPU/rtl/memory/a0_p199_atomic_frame_bank_epoch.sv
+            A0-GPU/rtl/memory/a0_p200_dual_bank_word_router.sv
+            A0-GPU/rtl/memory/a0_p201_automatic_frame_epoch_sequencer.sv
+            A0-GPU/tests/rtl/models/a0_p196_external_word_memory_model.sv
+          )
+          iverilog -g2012 -Wall -s a0_p201_automatic_p175_epoch_tb \
+            -o EVIDENCE/P201/rtl/p201_full.vvp \
+            "${sources[@]}" A0-GPU/tests/rtl/a0_p201_automatic_p175_epoch_tb.sv
+          timeout 1200s vvp EVIDENCE/P201/rtl/p201_full.vvp \
+            | tee EVIDENCE/P201/rtl/p201_full.log
+          grep -q '^P201_AUTOMATIC_P175_EPOCH_PASS frame=256x256 epochs=2 exported=131072 old_reads=200 auto_begin=1 auto_seal=1 atomic_publish=1 reset_fail_closed=1$' \
+            EVIDENCE/P201/rtl/p201_full.log
+      - name: Verify negative contract and drain guard with independent tiny instance
+        run: |
+          set -euo pipefail
+          iverilog -g2012 -Wall -s a0_p201_automatic_epoch_fault_tb \
+            -o EVIDENCE/P201/rtl/p201_negative.vvp \
+            A0-GPU/rtl/memory/a0_p201_automatic_frame_epoch_sequencer.sv \
+            A0-GPU/tests/rtl/a0_p201_automatic_epoch_fault_tb.sv
+          timeout 60s vvp EVIDENCE/P201/rtl/p201_negative.vvp \
+            | tee EVIDENCE/P201/rtl/p201_negative.log
+          grep -q '^P201_COORDINATOR_FAULT_GUARDS_PASS early_done_fault=1 duplicate_request_fault=1 sticky_fault=1 drain_guard=1 legal_publish=1$' \
+            EVIDENCE/P201/rtl/p201_negative.log
+      - name: Synthesize coordinator RTL and require zero structural problems
+        run: |
+          set -euo pipefail
+          yosys -Q -T -p 'read_verilog -sv A0-GPU/rtl/memory/a0_p201_automatic_frame_epoch_sequencer.sv; hierarchy -check -top a0_p201_automatic_frame_epoch_sequencer; synth -top a0_p201_automatic_frame_epoch_sequencer; check -assert; stat' \
+            | tee EVIDENCE/P201/rtl/p201_yosys.log
+          grep -q 'Found and reported 0 problems.' EVIDENCE/P201/rtl/p201_yosys.log
+          grep -q '=== a0_p201_automatic_frame_epoch_sequencer ===' EVIDENCE/P201/rtl/p201_yosys.log
+      - name: Preserve first-failure output without retries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p201-automatic-dual-frame-epoch-evidence
+          path: EVIDENCE/P201/rtl
+          if-no-files-found: warn
