@@ -31,7 +31,7 @@ module a0_p212_gray_async_fifo #(
   endfunction
   wire [ADDR_BITS:0] wbin_next=wbin_q+1'b1;
   wire [ADDR_BITS:0] wgray_next=gray(wbin_next);
-  wire full=(wgray_next==
+  wire full=(wgray_q==
       {~w_rgray_sync_q[ADDR_BITS:ADDR_BITS-1],
         w_rgray_sync_q[ADDR_BITS-2:0]});
   wire empty=(rgray_q==r_wgray_sync_q);
