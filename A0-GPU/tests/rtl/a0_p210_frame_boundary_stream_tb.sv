@@ -129,6 +129,7 @@ module a0_p210_frame_boundary_stream_tb #(
     boot();
     for(i=0;i<WORDS;i=i+1)write_word(BASE+i,pixel(0,i));
     hw(6'h31,8'h01); // initial publication may proceed without prior front
+    wait_pixel(0,1,pixel(0,0)); // wait until publication handshake settles
     // While frame 0 is being consumed, producer writes complete frame 1.
     fork
       begin : producer
