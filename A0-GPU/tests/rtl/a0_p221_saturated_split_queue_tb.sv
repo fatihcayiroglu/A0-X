@@ -185,7 +185,9 @@ module a0_p221_saturated_split_queue_tb #(
       @(negedge host_clk);n=n+1;
     end
     if(!dut.queue.full || !pixel_valid || pixel_epoch!==2)
-      $fatal(1,"P221 second epoch never refilled FIFO after drain");
+      $fatal(1,"P221 second epoch never refilled FIFO after drain full=%b valid=%b epoch=%0d guard=%0d host_fault=%b pix_fault=%b source_state=%0d wbin=%0d rbin=%0d",
+        dut.queue.full,pixel_valid,pixel_epoch,n,fault,pixel_fault,
+        dut.source.state_q,dut.queue.wbin_q,dut.queue.rbin_q);
     @(negedge pixel_clk);
     #1 rst_n=0;
     #1;
