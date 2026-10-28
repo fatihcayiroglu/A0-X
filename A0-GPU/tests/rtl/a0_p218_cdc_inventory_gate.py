@@ -65,7 +65,7 @@ def inspect_rtl(source: str) -> list[tuple[str, str, str, str, str]]:
     for label, token in REQUIRED_PROTOCOL_TOKENS.items():
         if token not in source:
             raise AssertionError(f"P218 missing guarded protocol: {label}")
-    if source.count(".host_rst_n(host_rst_n),.pixel_rst_n(pixel_rst_n)") != 2:
+    if source.count(".host_rst_n(host_rst_n),.pixel_rst_n(pixel_rst_n)") != 3:
         raise AssertionError("P218 split resets not wired to both boundaries")
     if ".rst_n(fabric_rst_n)" in source:
         raise AssertionError("P218 combined status reset reached sequential datapath")
