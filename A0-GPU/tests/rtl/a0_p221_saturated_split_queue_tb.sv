@@ -181,11 +181,13 @@ module a0_p221_saturated_split_queue_tb #(
     // Refill the FIFO with the newer epoch; issue a raw reset while FULL.
     pixel_ready=0;
     n=0;
-    while(!dut.queue.full && n<WORDS*100+5000)begin
-      @(negedge host_clk);n=n+1;
+    // A full WR pointer may arrive before the RD prefetch valid stage.
+    // Demand both full occupancy and a stable prefetched second-epoch word.
+    while(!(dut.queue.full && pixel_valid) && n<WORDS*200+10000)begin
+      @(negedge pixel_clk);n=n+1;
     end
     if(!dut.queue.full || !pixel_valid || pixel_epoch!==2)
-      $fatal(1,"P221 second epoch never refilled FIFO after drain full=%b valid=%b epoch=%0d guard=%0d host_fault=%b pix_fault=%b source_state=%0d wbin=%0d rbin=%0d",
+      $fatal(1,"P221 second epoch never refilled with valid FIFO head full=%b valid=%b epoch=%0d guard=%0d host_fault=%b pix_fault=%b source_state=%0d wbin=%0d rbin=%0d",
         dut.queue.full,pixel_valid,pixel_epoch,n,fault,pixel_fault,
         dut.source.state_q,dut.queue.wbin_q,dut.queue.rbin_q);
     @(negedge pixel_clk);
