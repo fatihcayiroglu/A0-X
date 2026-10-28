@@ -187,7 +187,12 @@ module a0_p200_p175_atomic_dual_snapshot_tb #(
       if(export_fault || fifo_reject || write_fault ||
          bank0_write_fault || bank1_write_fault || protocol_fault ||
          router_fault || epoch_fault)
-        $fatal(1,"P198 fatal exporter/FIFO/memory protocol fault");
+        $fatal(1,"P200 FIRST FAILURE export=%b fifo=%b write=%b bank0=%b bank1=%b protocol=%b router=%b epoch=%b accepted=%0d committed=%0d stage=%b bank=%b published=%0d epoch_commits=%0d mem_cmd_valid=%b write=%b addr=%h ready=%b rsp=%b",
+          export_fault,fifo_reject,write_fault,bank0_write_fault,
+          bank1_write_fault,protocol_fault,router_fault,epoch_fault,
+          accepted_export,committed_export,stage_active,stage_bank,
+          published_epochs,committed_words,mem_cmd_valid,mem_cmd_write,
+          mem_cmd_addr,mem_cmd_ready,mem_rsp_valid);
       if(publish_pulse)publications=publications+1;
       if(export_pixel_valid && !export_pixel_ready)
         export_stalls=export_stalls+1;
