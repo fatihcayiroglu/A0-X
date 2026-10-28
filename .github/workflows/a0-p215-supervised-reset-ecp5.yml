@@ -430,7 +430,7 @@ jobs:
               A0-GPU/rtl/display/a0_p212_gray_async_fifo.sv \
               A0-GPU/rtl/display/a0_p212_async_frame_queue.sv \
               A0-GPU/rtl/display/a0_p213_atomic_pixel_raster.sv \
-              A0-GPU/rtl/display/a0_p215_supervised_pixel_raster.sv \ \
+              A0-GPU/rtl/display/a0_p215_supervised_pixel_raster.sv \
               A0-GPU/tests/rtl/a0_p215_supervised_pixel_raster_tb.sv
             timeout 600s vvp "EVIDENCE/P215/rtl/p215_supervised_$size.vvp" \
               | tee "EVIDENCE/P215/rtl/p215_supervised_$size.log"
