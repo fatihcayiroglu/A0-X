@@ -184,6 +184,11 @@ module a0_p200_p175_atomic_dual_snapshot_tb #(
   integer publications=0,old_reads=0;
   always @(posedge clk)begin
     if(rst_n)begin
+      if(export_fault)
+        $display("P200 EXPORTER DEBUG state=%0d x=%0d y=%0d queued=%0d start=%b done=%b busy=%b host_req=%b host_ready=%b rsp_valid=%b rsp_error=%b",
+          exporter.state_q,exporter.x_q,exporter.y_q,exporter.queued_q,
+          export_start,export_done,export_busy,export_req_valid,req_ready,
+          rsp_valid,rsp_error);
       if(export_fault || fifo_reject || write_fault ||
          bank0_write_fault || bank1_write_fault || protocol_fault ||
          router_fault || epoch_fault)
