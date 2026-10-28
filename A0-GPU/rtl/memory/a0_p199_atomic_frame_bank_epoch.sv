@@ -71,7 +71,8 @@ module a0_p199_atomic_frame_bank_epoch #(
       end
       // No reader can cross a bank flip. A read that accepted before the
       // seal remains assigned to the old active bank until its response.
-      if(seal_q && !lease_q && !read_accept && !fault_q)begin
+      if(seal_q && !lease_q && !read_accept && !fault_q &&
+         !stage_begin && !stage_seal && !write_commit && !read_complete)begin
         active_bank_q<=~active_bank_q;
         active_valid_q<=1;stage_q<=0;seal_q<=0;
         epoch_q<=epoch_q+32'd1;publish_pulse<=1;
