@@ -76,7 +76,7 @@ module a0_p213_atomic_pixel_raster_tb #(
       @(negedge host_clk);rst_n=0;host_valid=0;host_write=0;last_tick=-1;
       repeat(3)@(negedge host_clk);rst_n=1;
       @(negedge host_clk);
-      if(!dut.source.source.scanout.scanout.fault && !dut.source.source.scanout.busy)
+      if(!dut.source.source.busy)
         $fatal(1,"P213 physical reset scrub not observed");
       repeat(6)@(negedge pixel_clk);
       n=0;
@@ -117,7 +117,7 @@ module a0_p213_atomic_pixel_raster_tb #(
       end
     end
   endtask
-  integer i,n;
+  integer i,n,saved_drops;
   initial begin
     boot();
     // An incomplete physical source frame must be rejected before startup.
@@ -144,7 +144,8 @@ module a0_p213_atomic_pixel_raster_tb #(
         check_frame(1,2);
       end
     join
-    if(dut.duplicate_frames_q==0)
+    saved_drops=dut.duplicate_frames_q;
+    if(saved_drops==0)
       $fatal(1,"P213 did not demonstrate dropped duplicate epoch frames");
     // Strict front-lock survives independent pixel-domain publication.
     hw(6'h02,8'h01);
@@ -155,7 +156,7 @@ module a0_p213_atomic_pixel_raster_tb #(
     if(dut.front_valid_q || video_pixel!==48'd0)
       $fatal(1,"P213 pixel local BRAM became visible without fresh frame");
     $display("P213_ATOMIC_PIXEL_RASTER_PASS words=%0d frames=2 epochs=2 dual_clock=1 vblank_swap=1 no_torn_frame=1 duplicate_drops=%0d sync_blank=1 front_lock=1 reset_mask=1",
-      WORDS,dut.duplicate_frames_q);
+      WORDS,saved_drops);
     $finish;
   end
   initial begin #800000000;$fatal(1,"P213 bounded real raster timeout");end
