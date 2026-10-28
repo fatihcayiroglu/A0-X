@@ -91,7 +91,7 @@ module a0_p198_p175_frame_snapshot_export #(
             end
           end else begin x_q<=x_q+16'd1;state_q<=XY_REQ;end
         end
-        COMPLETE:begin end
+        // A completed export can be restarted without resetting the P175\n        // framebuffer or invalidating the already-published external bank.\n        COMPLETE:if(start)begin\n          x_q<=0;y_q<=0;rgb_q<=0;z_q<=0;queued_q<=0;\n          failed_q<=0;state_q<=XY_REQ;\n        end
         FAILED:begin end
         default:begin failed_q<=1;state_q<=FAILED;end
       endcase
