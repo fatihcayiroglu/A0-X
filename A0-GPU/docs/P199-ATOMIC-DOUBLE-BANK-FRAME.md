@@ -26,3 +26,5 @@ For each of two 256×256 epochs, submit/commit **65,536 actual writes**, indepen
 This is not yet the P198 live exporter connected through a hardware bank/address mapper; the memory-bank routing is verified in the testbench. Next integration should use actual P175 snapshots from P198 as the staged producer, then move to FPGA place/route and physical memory hardware. No VRAM/board/driver/game FPS performance claim.
 
 Stacked **draft** on P198 #75; preserve first failing test evidence and require independent review before any parent merge.
+
+A final adversarial 2-word instance forces a conflicting stage begin on the very cycle a sealed frame would otherwise flip. Hardware must latch a fault and must **not** publish an invalid epoch in that cycle.
