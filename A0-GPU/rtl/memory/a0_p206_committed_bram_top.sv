@@ -46,6 +46,10 @@ module a0_p206_committed_bram_top #(
   wire [47:0] ram_wdata=state_q==SCRUB ? 48'd0 : req_pixel_q;
   always_ff @(posedge clk)
     if(ram_we)ram[ram_waddr]<=ram_wdata;
+  // Unconditional registered read: memory_dff can absorb this FF into
+  // ECP5's synchronous EBR read port (no output reset/extra mux).
+  always_ff @(posedge clk)
+    rsp_pixel_q<=ram[ram_index];
 
   a0_p205_narrow_p203_mailbox #(
     .FRAME_WORDS(WORDS),.BASE_WORD_ADDR(BASE_WORD_ADDR),
@@ -91,7 +95,7 @@ module a0_p206_committed_bram_top #(
     if(!rst_n)begin
       state_q<=SCRUB;byte_index_q<=0;
       scrub_index_q<=0;req_write_q<=0;rsp_error_q<=0;
-      req_addr_q<=0;req_id_q<=0;req_pixel_q<=0;rsp_pixel_q<=0;
+      req_addr_q<=0;req_id_q<=0;req_pixel_q<=0;
     end else begin
       case(state_q)
         SCRUB:begin
@@ -124,9 +128,7 @@ module a0_p206_committed_bram_top #(
         end
         MEM_EXEC:begin
           rsp_error_q<=!address_ok;
-          rsp_pixel_q<=0;
           if(address_ok)begin
-            if(!req_write_q)rsp_pixel_q<=ram[ram_index];
           end
           state_q<=SET_ERROR;
         end
