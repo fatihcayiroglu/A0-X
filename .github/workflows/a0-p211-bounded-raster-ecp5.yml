@@ -279,7 +279,9 @@ jobs:
             A0-GPU/tests/rtl/a0_p211_bounded_raster_timing_tb.sv
           timeout 120s vvp EVIDENCE/P211/rtl/p211_underflow.vvp \
             | tee EVIDENCE/P211/rtl/p211_underflow.log
-          grep -q '^P211_TIMING_UNDERFLOW_PASS words=8 div=1 sticky=1 black=1 reset=1
+          grep -q '^P211_TIMING_UNDERFLOW_PASS words=8 div=1 sticky=1 black=1 reset=1$' \
+            EVIDENCE/P211/rtl/p211_underflow.log
+      - name: Physically route P211 bounded raster and and twelve real EBRs
         run: |
           set -euo pipefail
           mkdir -p EVIDENCE/P211/route
@@ -299,9 +301,9 @@ jobs:
           top=json.loads((p/'netlist.json').read_text())['modules']['a0_p211_bounded_raster_timing']
           pins=sum(len(v['bits']) for v in top['ports'].values())
           cells=collections.Counter(v['type'] for v in top['cells'].values())
-          assert pins==82,('bounded raster must expose exactly 82 I/O bits',pins)
+          assert pins==82,('raster must expose 82 I/O bits',pins)
           assert cells.get('DP16KD',0)>=12,('four 1024x48 RAM banks must map to physical ECP5 EBR',cells)
-          assert cells.get('LUT4',0)>0 and cells.get('TRELLIS_FF',0)>=4182,('missing mapped raster counters',cells)
+          assert cells.get('LUT4',0)>0 and cells.get('TRELLIS_FF',0)>=4182,('missing mapped raster controller',cells)
           assert not any(k.startswith('$') or k.startswith('a0_') or 'LATCH' in k.upper() for k in cells),('unmapped/blackbox/latch cells',cells)
           fmax=json.loads((p/'route.json').read_text()).get('fmax',{})
           assert fmax and all(v.get('achieved',0)>0 for v in fmax.values()),('no physical clock route',fmax)
@@ -314,44 +316,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: p211-bounded-raster-evidence
-          path: EVIDENCE/P211
-          if-no-files-found: warn
- \
-            EVIDENCE/P211/rtl/p211_underflow.log
-      - name: Physically route P211 bounded raster and twelve real EBRs
-        run: |
-          set -euo pipefail
-          mkdir -p EVIDENCE/P211/route
-          yosys -Q -T -p 'read_verilog -sv A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv A0-GPU/rtl/memory/a0_p208_frame_publication_fence.sv A0-GPU/rtl/display/a0_p209_independent_scanout.sv A0-GPU/rtl/display/a0_p210_frame_boundary_stream.sv; hierarchy -check -top a0_p210_frame_boundary_stream; synth_ecp5 -top a0_p210_frame_boundary_stream -json EVIDENCE/P211/route/netlist.json; check -assert; stat' \
-            2>&1 | tee EVIDENCE/P211/route/yosys_ecp5.log
-          grep -q 'Found and reported 0 problems.' EVIDENCE/P211/route/yosys_ecp5.log
-          timeout 1500s nextpnr-ecp5 --85k --package CABGA381 --speed 6 \
-            --json EVIDENCE/P211/route/netlist.json \
-            --textcfg EVIDENCE/P211/route/route.config \
-            --report EVIDENCE/P211/route/route.json \
-            --freq 10 --lpf-allow-unconstrained --seed 1 \
-            2>&1 | tee EVIDENCE/P211/route/nextpnr.log
-          python3 - <<'PY'
-          import collections,json
-          from pathlib import Path
-          p=Path('EVIDENCE/P211/route')
-          top=json.loads((p/'netlist.json').read_text())['modules']['a0_p210_frame_boundary_stream']
-          pins=sum(len(v['bits']) for v in top['ports'].values())
-          cells=collections.Counter(v['type'] for v in top['cells'].values())
-          assert pins==123,('frame-stream top must expose exactly 123 I/O bits',pins)
-          assert cells.get('DP16KD',0)>=12,('four 1024x48 RAM banks must map to physical ECP5 EBR',cells)
-          assert cells.get('LUT4',0)>0 and cells.get('TRELLIS_FF',0)>=4055,('missing mapped streaming controller',cells)
-          assert not any(k.startswith('$') or k.startswith('a0_') or 'LATCH' in k.upper() for k in cells),('unmapped/blackbox/latch cells',cells)
-          fmax=json.loads((p/'route.json').read_text()).get('fmax',{})
-          assert fmax and all(v.get('achieved',0)>0 for v in fmax.values()),('no physical clock route',fmax)
-          achieved=min(v['achieved'] for v in fmax.values())
-          assert achieved>=10.0,('routed frequency below 10 MHz experimental floor',fmax)
-          print('P210_REAL_FRAME_BOUNDARY_ROUTE_PASS package=CABGA381 pins=%d EBR=%d LUT4=%d FF=%d MHz=%.2f'%(pins,cells['DP16KD'],cells['LUT4'],cells['TRELLIS_FF'],achieved))
-          PY
-      - name: Preserve first-failure output without retries
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: p210-frame-boundary-stream-evidence
           path: EVIDENCE/P211
           if-no-files-found: warn
