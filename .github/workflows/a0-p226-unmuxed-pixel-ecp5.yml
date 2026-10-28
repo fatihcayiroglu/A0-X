@@ -221,7 +221,7 @@ jobs:
               timeout 600s vvp "EVIDENCE/P226/rtl/p226_raster_${size}_${mode}.vvp" \
                 | tee "EVIDENCE/P226/rtl/p226_raster_${size}_${mode}.log"
               if [ "$size" = 8 ]; then stop=1; else stop=0; fi
-              grep -q "^P226_UNMUXED_INGRESS_RASTER_PASS words=$size mode=$mode host_half_ns=$host_half pixel_half_ns=$pixel_half frames=2 epochs=2 no_torn_frame=1 vblank_swap=1 short_reset=1 live_clock_stop=$stop remote_ready_hold=$stop duplicate_drops=[1-9][0-9]* invalid_guard_checks=[1-9][0-9]* stale_hold_samples=[0-9][0-9]*$" \
+              grep -q "^P226_UNMUXED_INGRESS_RASTER_PASS words=$size mode=$mode host_half_ns=$host_half pixel_half_ns=$pixel_half frames=2 epochs=2 no_torn_frame=1 vblank_swap=1 short_reset=1 live_clock_stop=$stop remote_ready_hold=$stop duplicate_drops=[1-9][0-9]* invalid_guard_checks=[1-9][0-9]* stale_hold_samples=[1-9][0-9]*$" \
                 "EVIDENCE/P226/rtl/p226_raster_${size}_${mode}.log"
             done
           done
