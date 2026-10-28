@@ -1,0 +1,58 @@
+name: A0-X P199 two-bank frame publication no-tearing RTL
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/memory/a0_p199_atomic_frame_bank_epoch.sv'
+      - 'A0-GPU/tests/rtl/a0_p199_atomic_frame_epoch_tb.sv'
+      - 'A0-GPU/docs/P199-ATOMIC-DOUBLE-BANK-FRAME.md'
+      - '.github/workflows/a0-p199-double-bank-frame.yml'
+      - 'A0-GPU/rtl/memory/a0_p195_external_pixel_write_queue.sv'
+      - 'A0-GPU/rtl/memory/a0_p197_external_word_port_arbiter.sv'
+  push:
+    branches: [main]
+    paths:
+      - 'A0-GPU/rtl/memory/a0_p199_atomic_frame_bank_epoch.sv'
+      - 'A0-GPU/tests/rtl/a0_p199_atomic_frame_epoch_tb.sv'
+      - '.github/workflows/a0-p199-double-bank-frame.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p199-atomic-frame-bank:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual Icarus and Yosys tools
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y iverilog yosys
+      - name: Prove two full frames with true physical-bank simulation backends
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P199/rtl
+          iverilog -g2012 -Wall -s a0_p199_atomic_frame_epoch_tb \
+            -o EVIDENCE/P199/rtl/p199.vvp \
+            A0-GPU/rtl/memory/a0_p195_external_pixel_write_queue.sv \
+            A0-GPU/rtl/memory/a0_p197_external_word_port_arbiter.sv \
+            A0-GPU/rtl/memory/a0_p199_atomic_frame_bank_epoch.sv \
+            A0-GPU/tests/rtl/models/a0_p196_external_word_memory_model.sv \
+            A0-GPU/tests/rtl/a0_p199_atomic_frame_epoch_tb.sv
+          timeout 900s vvp EVIDENCE/P199/rtl/p199.vvp \
+            | tee EVIDENCE/P199/rtl/p199.log
+          grep -q '^P199_DOUBLE_BANK_PUBLICATION_PASS frame=256x256 epochs=2 committed=131072 old_reads=200 no_torn_reads=1 reader_seal_guard=1 backpressure=1 invalid_commit_fault=1 reset_fail_closed=1 seal_conflict_fault=1$' \
+            EVIDENCE/P199/rtl/p199.log
+      - name: Synthesise the hardware epoch controller and check connections
+        run: |
+          set -euo pipefail
+          yosys -Q -T -p 'read_verilog -sv A0-GPU/rtl/memory/a0_p199_atomic_frame_bank_epoch.sv; hierarchy -check -top a0_p199_atomic_frame_bank_epoch; synth -top a0_p199_atomic_frame_bank_epoch; check -assert; stat' \
+            | tee EVIDENCE/P199/rtl/p199_yosys.log
+          grep -q 'Found and reported 0 problems.' EVIDENCE/P199/rtl/p199_yosys.log
+          grep -q '=== a0_p199_atomic_frame_bank_epoch ===' EVIDENCE/P199/rtl/p199_yosys.log
+      - name: Preserve first-failure evidence without retries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p199-double-bank-frame-evidence
+          path: EVIDENCE/P199/rtl
+          if-no-files-found: warn
