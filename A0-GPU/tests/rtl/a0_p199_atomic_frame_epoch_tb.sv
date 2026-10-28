@@ -26,6 +26,10 @@ module a0_p199_atomic_frame_epoch_tb;
   wire write_permitted,read_permitted,read_leased,seal_pending,publish_pulse,epoch_fault;
   wire [31:0] committed_words,published_epochs;
   logic inject_bad_commit=0;
+  logic tiny_rst_n=0,tiny_begin=0,tiny_seal=0,tiny_write=0;
+  logic [31:0] tiny_write_addr=BASE;
+  wire tiny_valid,tiny_fault,tiny_pending;
+  wire [31:0] tiny_count,tiny_epochs;
   wire write_commit=mem_cmd_valid && mem_cmd_ready && mem_cmd_write;
   wire read_accept=mem_cmd_valid && mem_cmd_ready && !mem_cmd_write;
 
@@ -67,6 +71,22 @@ module a0_p199_atomic_frame_epoch_tb;
     .read_leased(read_leased),.seal_pending(seal_pending),
     .publish_pulse(publish_pulse),.fault(epoch_fault),
     .committed_words(committed_words),.published_epochs(published_epochs)
+  );
+
+  // Adversarial two-word publication test: an illegal stage_begin arriving
+  // in the same cycle as a pending publication must fail closed, not flip.
+  a0_p199_atomic_frame_bank_epoch #(
+    .FRAME_WORDS(2),.BASE_WORD_ADDR(BASE)
+  ) adversarial(
+    .clk(clk),.rst_n(tiny_rst_n),.stage_begin(tiny_begin),
+    .stage_seal(tiny_seal),.write_commit(tiny_write),
+    .write_word_addr(tiny_write_addr),
+    .read_accept(1'b0),.read_complete(1'b0),
+    .stage_bank(),.active_bank(),.active_valid(tiny_valid),
+    .stage_active(),.write_permitted(),.read_permitted(),
+    .read_leased(),.seal_pending(tiny_pending),.publish_pulse(),
+    .fault(tiny_fault),.committed_words(tiny_count),
+    .published_epochs(tiny_epochs)
   );
 
   // P196 models remain two independent SIMULATION-ONLY physical banks.
@@ -301,7 +321,19 @@ module a0_p199_atomic_frame_epoch_tb;
        read_permitted)
       $fatal(1,"P199 reset left stale published epoch visible");
 
-    $display("P199_DOUBLE_BANK_PUBLICATION_PASS frame=256x256 epochs=2 committed=131072 old_reads=200 no_torn_reads=1 reader_seal_guard=1 backpressure=1 invalid_commit_fault=1 reset_fail_closed=1");
+    tiny_rst_n=1;
+    @(negedge clk);tiny_begin=1;
+    @(negedge clk);tiny_begin=0;
+    @(negedge clk);tiny_write=1;tiny_write_addr=BASE;
+    @(negedge clk);tiny_write_addr=BASE+32'd1;
+    @(negedge clk);tiny_write=0;
+    if(tiny_count!=2)$fatal(1,"P199 adversarial stage incomplete");
+    @(negedge clk);tiny_seal=1;
+    @(negedge clk);tiny_seal=0;tiny_begin=1;
+    @(negedge clk);tiny_begin=0;
+    if(!tiny_fault || tiny_epochs!=0 || tiny_valid)
+      $fatal(1,"P199 illegally published a sealed epoch during conflicting input");
+    $display("P199_DOUBLE_BANK_PUBLICATION_PASS frame=256x256 epochs=2 committed=131072 old_reads=200 no_torn_reads=1 reader_seal_guard=1 backpressure=1 invalid_commit_fault=1 reset_fail_closed=1 seal_conflict_fault=1");
     $finish;
   end
   initial begin #30000000; $fatal(1,"P199 global simulation timeout"); end
