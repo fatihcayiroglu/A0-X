@@ -38,6 +38,14 @@ module a0_p206_committed_bram_top #(
   // A synchronous read and single write port permit real ECP5 EBR inference.
   // Reset *scrubs* every word before acknowledging the P203 flush barrier.
   (* ram_style="block" *) logic [47:0] ram [0:WORDS-1];
+  // Exactly one synchronous write port: reset scrub and committed writes
+  // share the same EBR address/data/enable signals.
+  wire ram_we=rst_n && (state_q==SCRUB ||
+      (state_q==MEM_EXEC && address_ok && req_write_q));
+  wire [AW-1:0] ram_waddr=state_q==SCRUB ? scrub_index_q : ram_index;
+  wire [47:0] ram_wdata=state_q==SCRUB ? 48'd0 : req_pixel_q;
+  always_ff @(posedge clk)
+    if(ram_we)ram[ram_waddr]<=ram_wdata;
 
   a0_p205_narrow_p203_mailbox #(
     .FRAME_WORDS(WORDS),.BASE_WORD_ADDR(BASE_WORD_ADDR),
@@ -87,7 +95,6 @@ module a0_p206_committed_bram_top #(
     end else begin
       case(state_q)
         SCRUB:begin
-          ram[scrub_index_q]<=48'd0;
           if(scrub_index_q==WORDS-1)state_q<=FLUSH_POLL;
           else scrub_index_q<=scrub_index_q+1'b1;
         end
@@ -119,8 +126,7 @@ module a0_p206_committed_bram_top #(
           rsp_error_q<=!address_ok;
           rsp_pixel_q<=0;
           if(address_ok)begin
-            if(req_write_q)ram[ram_index]<=req_pixel_q;
-            else rsp_pixel_q<=ram[ram_index];
+            if(!req_write_q)rsp_pixel_q<=ram[ram_index];
           end
           state_q<=SET_ERROR;
         end
