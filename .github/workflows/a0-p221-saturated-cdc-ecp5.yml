@@ -162,6 +162,31 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get install -y iverilog yosys nextpnr-ecp5
+      - name: Saturate P216 split-reset FIFO with real committed EBR frames at both clock ratios
+        run: |
+          set -euo pipefail
+          for size in 8 1024; do
+            for mode in 0 1; do
+              iverilog -g2012 -Wall -s a0_p221_saturated_split_queue_tb \
+                -Pa0_p221_saturated_split_queue_tb.WORDS="$size" \
+                -Pa0_p221_saturated_split_queue_tb.MODE="$mode" \
+                -o "EVIDENCE/P221/rtl/p221_full_${size}_${mode}.vvp" \
+                A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
+                A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv \
+                A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv \
+                A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv \
+                A0-GPU/rtl/memory/a0_p208_frame_publication_fence.sv \
+                A0-GPU/rtl/display/a0_p209_independent_scanout.sv \
+                A0-GPU/rtl/display/a0_p210_frame_boundary_stream.sv \
+                A0-GPU/rtl/display/a0_p216_domain_local_reset_raster.sv \
+                A0-GPU/tests/rtl/a0_p221_saturated_split_queue_tb.sv
+              timeout 600s vvp "EVIDENCE/P221/rtl/p221_full_${size}_${mode}.vvp" \
+                | tee "EVIDENCE/P221/rtl/p221_full_${size}_${mode}.log"
+              grep -q "^P221_SATURATED_CDC_PASS words=$size mode=$mode fifo_depth=8 full=1 stall_pixel_edges=24 old_frames=[1-9][0-9]* second_epoch=1 indexed=1 boundary=1 reset_full=1 stale_replay=0$" \
+                "EVIDENCE/P221/rtl/p221_full_${size}_${mode}.log"
+            done
+          done
+
       - name: Prove P175 real frames pass two tagged write-commit bridges
         run: |
           set -euo pipefail
@@ -568,31 +593,6 @@ jobs:
           assert all(m['compiled'] and m['rejected_by_hdl_fatal'] for m in data['mutants'])
           assert not data['board_signoff'] and not data['formal_cdc_signoff']
           PY
-
-      - name: Saturate P216 split-reset FIFO with real committed EBR frames at both clock ratios
-        run: |
-          set -euo pipefail
-          for size in 8 1024; do
-            for mode in 0 1; do
-              iverilog -g2012 -Wall -s a0_p221_saturated_split_queue_tb \
-                -Pa0_p221_saturated_split_queue_tb.WORDS="$size" \
-                -Pa0_p221_saturated_split_queue_tb.MODE="$mode" \
-                -o "EVIDENCE/P221/rtl/p221_full_${size}_${mode}.vvp" \
-                A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
-                A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv \
-                A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv \
-                A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv \
-                A0-GPU/rtl/memory/a0_p208_frame_publication_fence.sv \
-                A0-GPU/rtl/display/a0_p209_independent_scanout.sv \
-                A0-GPU/rtl/display/a0_p210_frame_boundary_stream.sv \
-                A0-GPU/rtl/display/a0_p216_domain_local_reset_raster.sv \
-                A0-GPU/tests/rtl/a0_p221_saturated_split_queue_tb.sv
-              timeout 600s vvp "EVIDENCE/P221/rtl/p221_full_${size}_${mode}.vvp" \
-                | tee "EVIDENCE/P221/rtl/p221_full_${size}_${mode}.log"
-              grep -q "^P221_SATURATED_CDC_PASS words=$size mode=$mode fifo_depth=8 full=1 stall_pixel_edges=24 old_frames=[1-9][0-9]* second_epoch=1 indexed=1 boundary=1 reset_full=1 stale_replay=0$" \
-                "EVIDENCE/P221/rtl/p221_full_${size}_${mode}.log"
-            done
-          done
 
       - name: Prove adversarial local-edge reset recovery with both clocks stopped in turn
         run: |
