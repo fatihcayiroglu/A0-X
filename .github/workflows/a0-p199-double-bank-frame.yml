@@ -40,7 +40,7 @@ jobs:
             A0-GPU/tests/rtl/a0_p199_atomic_frame_epoch_tb.sv
           timeout 900s vvp EVIDENCE/P199/rtl/p199.vvp \
             | tee EVIDENCE/P199/rtl/p199.log
-          grep -q '^P199_DOUBLE_BANK_PUBLICATION_PASS frame=256x256 epochs=2 committed=131072 old_reads=200 no_torn_reads=1 reader_seal_guard=1 backpressure=1 invalid_commit_fault=1 reset_fail_closed=1$' \
+          grep -q '^P199_DOUBLE_BANK_PUBLICATION_PASS frame=256x256 epochs=2 committed=131072 old_reads=200 no_torn_reads=1 reader_seal_guard=1 backpressure=1 invalid_commit_fault=1 reset_fail_closed=1 seal_conflict_fault=1$' \
             EVIDENCE/P199/rtl/p199.log
       - name: Synthesise the hardware epoch controller and check connections
         run: |
