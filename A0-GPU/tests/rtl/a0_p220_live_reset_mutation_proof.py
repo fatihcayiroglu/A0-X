@@ -27,12 +27,12 @@ SOURCES = [
 # The last field enforces a P219-specific live-clock-stop assertion when
 # the host-to-pixel ready handshake is removed.
 MUTANTS = [
-    ("host_reset_raw_mask_removed",
-     "assign host_rst_n=raw_rst_n && host_up_q;",
-     "assign host_rst_n=host_up_q;", None),
-    ("pixel_reset_raw_mask_removed",
-     "assign pixel_rst_n=raw_rst_n && pixel_up_q;",
-     "assign pixel_rst_n=pixel_up_q;", None),
+    ("host_reset_async_event_removed",
+     "always_ff @(posedge host_clk or negedge raw_rst_n)begin",
+     "always_ff @(posedge host_clk)begin", None),
+    ("pixel_reset_async_event_removed",
+     "always_ff @(posedge pixel_clk or negedge raw_rst_n)begin",
+     "always_ff @(posedge pixel_clk)begin", None),
     ("pixel_ignores_stopped_host",
      "if(pixel_ready_q[1] && host_ready_sync_p_q)pixel_up_q<=1;",
      "if(pixel_ready_q[1])pixel_up_q<=1;",
