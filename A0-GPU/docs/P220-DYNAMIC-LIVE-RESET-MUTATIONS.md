@@ -8,8 +8,8 @@ The dynamic test runner first compiles and executes three positive 8-word, two-e
 
 It then creates **six deliberately broken but compilable full P216 RTL variants**, each run against **all three** independent host/pixel clock schedules:
 
-1. Remove the host domain's asynchronous raw-reset output mask.
-2. Remove the pixel domain's asynchronous raw-reset output mask.
+1. Remove the host domain's asynchronous reset event from the clocked supervisor (the separate raw output mask remains).
+2. Remove the pixel domain's asynchronous reset event from the clocked supervisor (the separate raw output mask remains).
 3. Let pixel reset release without synchronizing the stopped host's readiness; requires the specific P219 live stopped-clock assertion to fire.
 4. Replace physical EBR scrub zero-data with nonzero pixels.
 5. Assert video data-enable throughout blanking intervals.
