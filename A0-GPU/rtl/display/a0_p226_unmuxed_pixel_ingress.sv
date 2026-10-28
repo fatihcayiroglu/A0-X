@@ -132,7 +132,10 @@ module a0_p226_split_reset_fifo #(
   wire prefetch=r_release_q && !empty && (!rd_valid_q || consume);
   assign wr_ready=wr_rst_n && w_release_q && !full;
   assign rd_valid=rd_rst_n && r_release_q && rd_valid_q;
-  assign rd_data=rd_valid ? rd_data_q : '0;
+  // P226 second physical-area iteration: FIFO payload is defined only when
+  // rd_valid is asserted. The downstream pixel pipeline captures data solely
+  // on valid, so a 92-bit zero-on-invalid mux is not an observable contract.
+  assign rd_data=rd_data_q;
   always_ff @(posedge wr_clk or negedge wr_rst_n)begin
     if(!wr_rst_n)begin
       wbin_q<=0;wgray_q<=0;
@@ -214,7 +217,7 @@ module a0_p226_split_reset_queue #(
   assign pixel_fault=pix_fault_q;
   assign pixel_valid=fifo_valid && !pix_fault_q;
   assign {frame_end,frame_start,pixel_epoch,pixel_index,pixel_data}=
-    pixel_valid ? fifo_data : 92'd0;
+    fifo_data; // Validity remains in pixel_valid; no invalid payload may be consumed.
   a0_p210_frame_boundary_stream #(
     .WORDS(WORDS),.BASE_WORD_ADDR(BASE_WORD_ADDR),
     .RESPONSE_TIMEOUT(RESPONSE_TIMEOUT)
