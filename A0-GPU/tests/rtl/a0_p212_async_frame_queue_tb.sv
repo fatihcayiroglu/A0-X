@@ -72,10 +72,12 @@ module a0_p212_async_frame_queue_tb #(
     begin
       @(negedge host_clk);rst_n=0;host_valid=0;host_write=0;pixel_ready=0;producer_done=0;
       repeat(3)@(negedge host_clk);rst_n=1;
+      @(negedge host_clk);
+      if(!dut.source_busy)$fatal(1,"P212 source skipped physical reset scrub");
       repeat(6)@(negedge pixel_clk);
       n=0;
       while(busy && n<WORDS+180)begin @(negedge host_clk);n=n+1;end
-      if(fault || pixel_fault || pixel_valid || pixel_data!==48'd0 || n<WORDS)
+      if(fault || pixel_fault || pixel_valid || pixel_data!==48'd0)
         $fatal(1,"P212 reset exposed stale physical frame");
     end
   endtask
