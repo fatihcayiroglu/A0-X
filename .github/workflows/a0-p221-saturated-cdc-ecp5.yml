@@ -165,6 +165,7 @@ jobs:
       - name: Saturate P216 split-reset FIFO with real committed EBR frames at both clock ratios
         run: |
           set -euo pipefail
+          mkdir -p EVIDENCE/P221/rtl
           for size in 8 1024; do
             for mode in 0 1; do
               iverilog -g2012 -Wall -s a0_p221_saturated_split_queue_tb \
