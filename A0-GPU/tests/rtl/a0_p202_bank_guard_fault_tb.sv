@@ -80,6 +80,7 @@ module a0_p202_bank_guard_fault_tb;
     accept_read();
     repeat(2)@(negedge clk);
     backend_rsp_valid=1;backend_rsp_pixel=48'h112233445566;
+    #1; // allow combinational response path to settle
     if(!rsp_valid || rsp_error || rsp_pixel!=48'h112233445566)
       $fatal(1,"P202 delayed legal response lost");
     @(posedge clk);
@@ -93,6 +94,7 @@ module a0_p202_bank_guard_fault_tb;
     if(!fault || read_pending || error_pulses!=1)
       $fatal(1,"P202 missing/duplicate read timeout reply count=%0d",error_pulses);
     backend_rsp_valid=1;backend_rsp_pixel=48'hbad00bad0000;
+    #1;
     if(rsp_valid || rsp_pixel!=0 || backend_cmd_valid)
       $fatal(1,"P202 late response escaped quarantine");
     @(negedge clk);backend_rsp_valid=0;
@@ -101,6 +103,7 @@ module a0_p202_bank_guard_fault_tb;
     // A reply with no accepted read is never forwarded.
     reset_all();
     @(negedge clk);backend_rsp_valid=1;
+    #1;
     if(rsp_valid)$fatal(1,"P202 unsolicited response forwarded");
     @(negedge clk);
     if(!fault)$fatal(1,"P202 unsolicited response not latched");
@@ -109,6 +112,7 @@ module a0_p202_bank_guard_fault_tb;
     reset_all();
     @(negedge clk);cmd_valid=1;cmd_write=1;
     cmd_word_addr=32'h01000004;backend_cmd_ready=1;
+    #1;
     if(backend_cmd_valid || cmd_ready)
       $fatal(1,"P202 wrong-bank address accepted");
     @(negedge clk);
@@ -126,6 +130,7 @@ module a0_p202_bank_guard_fault_tb;
     reset_all();
     accept_read();
     @(negedge clk);backend_rsp_valid=1;backend_rsp_error=1;
+    #1;
     if(!rsp_valid || !rsp_error)
       $fatal(1,"P202 backend error not surfaced");
     @(negedge clk);backend_rsp_valid=0;backend_rsp_error=0;
@@ -136,6 +141,7 @@ module a0_p202_bank_guard_fault_tb;
     reset_all();
     accept_read();
     @(negedge clk);cmd_valid=1;cmd_write=1;
+    #1;
     if(backend_cmd_valid || cmd_ready)
       $fatal(1,"P202 overlapping command escaped");
     @(negedge clk);cmd_valid=0;
