@@ -48,3 +48,14 @@ barrier.
 
 No physical FPGA board, video/PCIe PHY, CDC MTBF/PVT/pin signoff, or
 consumer GPU gaming/FPS claim is made.
+
+## Second RTL iteration (after first exact-head physical failure)
+
+On original commit `cdd2efe3`, exact-head [run 40763847260](https://github.com/fatihcayiroglu/A0-X/actions/runs/40763847260) **FAILED** the real area gate: P224 13,370 LUT4 / 79.83 MHz pixel; P226 13,433 LUT4 (+63) / 94.30 MHz pixel. This first-failure result remains on the draft PR; the area gate is **not relaxed**.
+
+Further review found **two additional, serial 92-bit invalid-data masks** between FIFO BRAM and the P224/P226 pixel pipe:
+
+- FIFO `rd_data = rd_valid ? rd_data_q : '0`;
+- Queue `{frame_end,frame_start,pixel_epoch,pixel_index,pixel_data} = pixel_valid ? fifo_data : 0`.
+
+Both masks are unnecessary for the **internal** ready/valid payload, since the pixel register captures only when `queue_valid` and every consumption/write requires `src_valid`. Keep all valid, ready, source-fault, scrub, epoch, reset and bad-sample gates unchanged. With the two masks removed, data on an invalid internal FIFO output is *unspecified* and must never be used; it is not a new public data-exposure contract. The test now requires observing **nonzero stale invalid payload** under a no-write/no-consume invariant, including all six modes. Physical LUT-reduction and timing thresholds remain exactly as originally defined. Do not claim success until this new exact head is routed and verified.
