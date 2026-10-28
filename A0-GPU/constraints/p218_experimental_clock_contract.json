@@ -1,0 +1,13 @@
+{
+  "schema": "a0-x-ecp5-experimental-clock-contract-v1",
+  "top_module": "a0_p216_domain_local_reset_raster",
+  "device": "ECP5-85K",
+  "package": "CABGA381",
+  "clock_ports": ["host_clk", "pixel_clk"],
+  "minimum_each_routed_mhz": 10.0,
+  "clock_relation": "asynchronous-independent",
+  "board_pin_map": null,
+  "board_timing_signoff": false,
+  "formal_cdc_signoff": false,
+  "note": "Not an LPF/SDC board pin map; nextpnr --freq 10 is only an experimental floor for both clock domains."
+}
