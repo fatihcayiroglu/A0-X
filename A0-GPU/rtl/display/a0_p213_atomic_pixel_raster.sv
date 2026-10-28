@@ -26,8 +26,10 @@ module a0_p213_atomic_pixel_raster #(
   localparam integer HT=H_ACTIVE+H_FRONT+H_SYNC+H_BACK;
   localparam integer VT=V_ACTIVE+V_FRONT+V_SYNC+V_BACK;
   // These are pixel-clock-local BRAM frame images; no reset data dependency.
-  logic [47:0] frame0 [0:WORDS-1],frame1 [0:WORDS-1];
-  logic [47:0] front_read_q;
+  (* ram_style = "block" *) logic [47:0] frame0 [0:WORDS-1];
+  (* ram_style = "block" *) logic [47:0] frame1 [0:WORDS-1];
+  logic [47:0] front_read0_q,front_read1_q;
+  wire [47:0] front_read_word=front_bank_q ? front_read1_q : front_read0_q;
   logic [15:0] h_q,v_q,div_q;
   logic run_q,front_valid_q,front_bank_q,stage_valid_q,stage_bank_q;
   logic [31:0] front_epoch_q,stage_epoch_q;
@@ -86,10 +88,8 @@ module a0_p213_atomic_pixel_raster #(
       if(target_bank)frame1[src_index]<=src_data;
       else frame0[src_index]<=src_data;
     end
-    if(prefetch)begin
-      if(front_bank_q)front_read_q<=frame1[display_index];
-      else front_read_q<=frame0[display_index];
-    end
+    if(prefetch && front_bank_q)front_read1_q<=frame1[display_index];
+    if(prefetch && !front_bank_q)front_read0_q<=frame0[display_index];
   end
   always_ff @(posedge pixel_clk or negedge rst_n)begin
     if(!rst_n)begin
@@ -139,7 +139,7 @@ module a0_p213_atomic_pixel_raster #(
                           v_q<V_ACTIVE+V_FRONT+V_SYNC);
           video_de<=active && front_valid_q && !pixel_fault;
           video_pixel<=(active && front_valid_q && !pixel_fault) ?
-                         front_read_q : 48'd0;
+                         front_read_word : 48'd0;
           if(h_q==16'(HT-1))begin
             h_q<=0;
             if(v_q==16'(VT-1))v_q<=0;
