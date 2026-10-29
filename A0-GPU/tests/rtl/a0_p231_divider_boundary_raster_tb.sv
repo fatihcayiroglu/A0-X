@@ -160,7 +160,7 @@ module a0_p231_divider_boundary_raster_tb #(
   end
   integer i,n,saved_drops;
   initial begin
-    if(MODE<0 || MODE>2 || (DIV!=3 && DIV!=4 && DIV!=65 && DIV!=255))
+    if(MODE<0 || MODE>2 || (DIV!=2 && DIV!=3 && DIV!=4 && DIV!=65 && DIV!=255))
       $fatal(1,"P231 invalid test configuration");
     boot();
     // An incomplete physical source frame must be rejected before startup.
