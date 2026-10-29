@@ -166,6 +166,7 @@ module a0_p235_scaled_bram_rgb_tb #(parameter integer MODE=0);
     while(!dut.front_valid_q && cycles<HT*VT+10)begin
       @(negedge clk);cycles=cycles+1;
     end
+    #2; // allow the independent negedge RGB coverage monitor to sample pixel 0
     if(!dut.front_valid_q || dut.front_bank_q!==1 || !touched1[0])
       $fatal(1,"P235 first tile not published on VBlank");
     // Write the other bank while bank1 is ACTIVELY scanned; all visible
