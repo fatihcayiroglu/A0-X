@@ -105,6 +105,7 @@ module a0_p235_scaled_bram_rgb_tb #(parameter integer MODE=0);
       load_rgb=color(bank,idx);
       @(negedge clk);
       load_valid=0;
+      #1; // allow ready/commit_ready combinational logic to settle after deassertion
       if(dut.load_count_q!=10'(idx+1))
         $fatal(1,"P235 committed memory write counter incorrect index=%0d",idx);
     end
@@ -159,8 +160,9 @@ module a0_p235_scaled_bram_rgb_tb #(parameter integer MODE=0);
     // ROM), independently checked by counter. It must remain hidden until
     // the last VBlank wrap.
     for(i=0;i<TOTAL_PIX;i=i+1)write_one(i,1);
+    #1;
     if(!commit_ready || dut.front_valid_q)
-      $fatal(1,"P235 first completed frame visible before commit");
+      $fatal(1,"P235 first full tile state commit_ready=%b front_valid=%b count=%0d stage=%b",commit_ready,dut.front_valid_q,dut.load_count_q,dut.stage_valid_q);
     commit_whole();
     cycles=0;
     while(!dut.front_valid_q && cycles<HT*VT+10)begin
