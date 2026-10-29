@@ -106,7 +106,9 @@ module a0_p226_split_reset_fifo #(
   output logic [WIDTH-1:0] rd_data
 );
   localparam integer DEPTH=(1<<ADDR_BITS);
-  logic [WIDTH-1:0] mem [0:DEPTH-1];
+  // P236 ECP5 integration: require a real dual-clock EBR rather than
+  // distributed LUT RAM when instantiated as the upload CDC FIFO.
+  (* ram_style="block" *) logic [WIDTH-1:0] mem [0:DEPTH-1];
   logic [ADDR_BITS:0] wbin_q=0,wgray_q=0,rbin_q=0,rgray_q=0;
   (* async_reg = "true" *) logic [ADDR_BITS:0] w_rgray_meta_q=0,w_rgray_sync_q=0;
   (* async_reg = "true" *) logic [ADDR_BITS:0] r_wgray_meta_q=0,r_wgray_sync_q=0;
