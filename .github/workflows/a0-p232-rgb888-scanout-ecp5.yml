@@ -57,7 +57,7 @@ jobs:
                 | tee "EVIDENCE/P232/rtl/div_${div}_mode_${mode}.log"
               grep -q "^P231_DIVIDER_BOUNDARY_RASTER_PASS div=$div words=8 mode=$mode " \
                 "EVIDENCE/P232/rtl/div_${div}_mode_${mode}.log"
-              grep -q "^P232_RGB888_FULL_RASTER_PASS div=$div mode=$mode epoch1_active=[1-9][0-9]* epoch2_active=[1-9][0-9]* blank=[1-9][0-9]* depth_exposed=0 reset_mask=1 sync_equal=1$" \
+              grep -q "^P232_RGB888_FULL_RASTER_PASS div=$div mode=$mode words=8 epoch1_active=[1-9][0-9]* epoch2_active=[1-9][0-9]* blank=[1-9][0-9]* depth_exposed=0 reset_mask=1 sync_equal=1$" \
                 "EVIDENCE/P232/rtl/div_${div}_mode_${mode}.log"
             done
           done

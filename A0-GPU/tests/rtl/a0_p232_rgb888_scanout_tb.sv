@@ -42,16 +42,18 @@ endmodule
 // clock edge against the P226 source that P231 checks pixel-by-pixel.
 // CI requires BOTH the P231 and P232 full-frame PASS messages.
 module a0_p232_full_rgb888_raster_tb #(
-  parameter integer DIV=3,MODE=0
+  parameter integer DIV=3,MODE=0,WORDS=8
 );
+  localparam integer W=(WORDS==8)?4:32;
+  localparam integer H=WORDS/W;
   a0_p231_divider_boundary_raster_tb #(
-    .WORDS(8),.MODE(MODE),.DIV(DIV)
+    .WORDS(WORDS),.MODE(MODE),.DIV(DIV)
   ) source_tb();
   wire host_ready,host_fault,host_busy,pixel_fault;
   wire [7:0] host_rdata;
   wire ce,de,hs,vs;wire [23:0] rgb;
   a0_p232_domain_local_rgb888_raster #(
-    .H_ACTIVE(4),.V_ACTIVE(2),
+    .H_ACTIVE(W),.V_ACTIVE(H),
     .H_FRONT(8),.H_SYNC(4),.H_BACK(8),
     .V_FRONT(2),.V_SYNC(2),.V_BACK(2),
     .PIXEL_DIV(DIV),.FIFO_ADDR_BITS(6),.RESPONSE_TIMEOUT(256)
@@ -99,11 +101,11 @@ module a0_p232_full_rgb888_raster_tb #(
       prev_color=rgb;
       prev_depth=source_tb.video_pixel[23:0];
     end else if(rgb===24'd0) blank_pixels=blank_pixels+1;
-    if(!checked_once && epoch1_active>=8 && epoch2_active>=8 &&
+    if(!checked_once && epoch1_active>=WORDS && epoch2_active>=WORDS &&
        blank_pixels>=24) begin
       checked_once=1;
-      $display("P232_RGB888_FULL_RASTER_PASS div=%0d mode=%0d epoch1_active=%0d epoch2_active=%0d blank=%0d depth_exposed=0 reset_mask=1 sync_equal=1",
-        DIV,MODE,epoch1_active,epoch2_active,blank_pixels);
+      $display("P232_RGB888_FULL_RASTER_PASS div=%0d mode=%0d words=%0d epoch1_active=%0d epoch2_active=%0d blank=%0d depth_exposed=0 reset_mask=1 sync_equal=1",
+        DIV,MODE,WORDS,epoch1_active,epoch2_active,blank_pixels);
     end
   end
   // Check the short reset pulse while clocks may be stopped. P231 performs

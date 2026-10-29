@@ -353,6 +353,8 @@ module a0_p226_split_domain_raster #(
   wire discard_stage=consume && first_ingest && !bad_sample && !skip_ingest;
   wire active=(h_q<H_ACTIVE && v_q<V_ACTIVE);
   wire tick=run_q && div_q==16'(PIXEL_DIV-1);
+  // P233: 2-cycle scanout is valid: prefetch on div=0, consume on div=1.
+  // DIV=1 still needs an anticipatory next-address prefetch and stays illegal.
   wire prefetch=run_q && div_q==16'(PIXEL_DIV-2) &&
        active && !pixel_fault;
   wire [9:0] display_index=10'(v_q*H_ACTIVE+h_q);
@@ -459,7 +461,7 @@ module a0_p226_split_domain_raster #(
        H_ACTIVE<2 || V_ACTIVE<2 ||
        H_FRONT<1 || H_SYNC<1 || H_BACK<1 ||
        V_FRONT<1 || V_SYNC<1 || V_BACK<1 ||
-       HT>65535 || VT>65535 || PIXEL_DIV<3 || PIXEL_DIV>65535 ||
+       HT>65535 || VT>65535 || PIXEL_DIV<2 || PIXEL_DIV>65535 ||
        FIFO_ADDR_BITS<2 || FIFO_ADDR_BITS>10)
       $fatal(1,"P213 unsupported pixel-local raster geometry");
   end
