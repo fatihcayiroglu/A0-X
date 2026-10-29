@@ -64,7 +64,9 @@ module a0_p236_async_host_tile_top #(
 
   wire core_load_ready,core_commit_ready;
   wire fifo_commit=fifo_rd_data[34];
-  wire bridge_live=pixel_rst_n && !host_fault_q && !pixel_load_fault;
+  // host_fault_q remains host-local: never use an unsynchronized fault
+  // level to gate pixel-domain data. Bad packets are not enqueued.
+  wire bridge_live=pixel_rst_n && !pixel_load_fault;
   // The pixel-domain P235 sink accepts an indexed word only at ready.
   // Its stage_valid backpressures the FIFO until the next frame boundary.
   // This prevents overwriting a full pending bank while scanout continues.
