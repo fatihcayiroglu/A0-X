@@ -1,0 +1,66 @@
+name: A0-X P231 independent-clock pixel divider boundary raster
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/tests/rtl/a0_p231_divider_boundary_raster_tb.sv'
+      - 'A0-GPU/docs/P231-PIXEL-DIVIDER-BOUNDARY-RASTER.md'
+      - '.github/workflows/a0-p231-divider-boundary-raster.yml'
+      - 'A0-GPU/rtl/display/a0_p226_unmuxed_pixel_ingress.sv'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-divider-boundary-raster:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual Icarus Verilog
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y iverilog
+      - name: Prove atomic two-epoch full raster across clock ratios and divider boundaries
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P231/rtl
+          for div in 3 4 65 255; do
+            for mode in 0 1 2; do
+              case "$mode" in
+                0) host_half=4; pixel_half=7 ;;
+                1) host_half=7; pixel_half=4 ;;
+                2) host_half=5; pixel_half=6 ;;
+              esac
+              iverilog -g2012 -Wall -s a0_p231_divider_boundary_raster_tb \
+                -Pa0_p231_divider_boundary_raster_tb.WORDS=8 \
+                -Pa0_p231_divider_boundary_raster_tb.MODE="$mode" \
+                -Pa0_p231_divider_boundary_raster_tb.DIV="$div" \
+                -o "EVIDENCE/P231/rtl/div_${div}_mode_${mode}.vvp" \
+                A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
+                A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv \
+                A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv \
+                A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv \
+                A0-GPU/rtl/memory/a0_p208_frame_publication_fence.sv \
+                A0-GPU/rtl/display/a0_p209_independent_scanout.sv \
+                A0-GPU/rtl/display/a0_p210_frame_boundary_stream.sv \
+                A0-GPU/rtl/display/a0_p226_unmuxed_pixel_ingress.sv \
+                A0-GPU/tests/rtl/a0_p231_divider_boundary_raster_tb.sv
+              timeout 240s vvp "EVIDENCE/P231/rtl/div_${div}_mode_${mode}.vvp" \
+                | tee "EVIDENCE/P231/rtl/div_${div}_mode_${mode}.log"
+              grep -q "^P231_DIVIDER_BOUNDARY_RASTER_PASS div=$div words=8 mode=$mode host_half_ns=$host_half pixel_half_ns=$pixel_half frames=2 epochs=2 no_torn_frame=1 vblank_swap=1 short_reset=1 live_clock_stop=1 remote_ready_hold=1 duplicate_drops=[1-9][0-9]* invalid_guard_checks=[1-9][0-9]* stale_hold_samples=[1-9][0-9]*$" \
+                "EVIDENCE/P231/rtl/div_${div}_mode_${mode}.log"
+            done
+          done
+          test "$(find EVIDENCE/P231/rtl -name '*.log' | wc -l)" -eq 12
+      - name: Record exact-head source and all twelve proof logs
+        if: always()
+        run: |
+          mkdir -p EVIDENCE/P231
+          git rev-parse HEAD > EVIDENCE/P231/exact-head.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p231-divider-boundary-raster-evidence
+          path: EVIDENCE/P231/
+          if-no-files-found: error
+          retention-days: 14
