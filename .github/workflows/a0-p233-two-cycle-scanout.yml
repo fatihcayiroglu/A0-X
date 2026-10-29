@@ -1,0 +1,66 @@
+name: A0-X P233 two-cycle scanout full-frame proof
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/display/a0_p226_unmuxed_pixel_ingress.sv'
+      - 'A0-GPU/tests/rtl/a0_p231_divider_boundary_raster_tb.sv'
+      - 'A0-GPU/tests/rtl/a0_p232_rgb888_scanout_tb.sv'
+      - 'A0-GPU/docs/P233-TWO-CYCLE-PIXEL-SCANOUT.md'
+      - '.github/workflows/a0-p233-two-cycle-scanout.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  full-two-cycle-ebrs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real simulator
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y iverilog
+      - name: Prove PIXEL_DIV=2 two complete frame epochs and RGB888 isolation at two frame sizes
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P233
+          for words in 8 1024; do
+            for mode in 0 1 2; do
+              iverilog -g2012 -Wall -s a0_p232_full_rgb888_raster_tb \
+                -Pa0_p232_full_rgb888_raster_tb.WORDS="$words" \
+                -Pa0_p232_full_rgb888_raster_tb.DIV=2 \
+                -Pa0_p232_full_rgb888_raster_tb.MODE="$mode" \
+                -o "EVIDENCE/P233/div2_words${words}_mode${mode}.vvp" \
+                A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
+                A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv \
+                A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv \
+                A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv \
+                A0-GPU/rtl/memory/a0_p208_frame_publication_fence.sv \
+                A0-GPU/rtl/display/a0_p209_independent_scanout.sv \
+                A0-GPU/rtl/display/a0_p210_frame_boundary_stream.sv \
+                A0-GPU/rtl/display/a0_p226_unmuxed_pixel_ingress.sv \
+                A0-GPU/rtl/display/a0_p232_rgb888_scanout.sv \
+                A0-GPU/tests/rtl/a0_p231_divider_boundary_raster_tb.sv \
+                A0-GPU/tests/rtl/a0_p232_rgb888_scanout_tb.sv
+              timeout 600s vvp "EVIDENCE/P233/div2_words${words}_mode${mode}.vvp" \
+                | tee "EVIDENCE/P233/div2_words${words}_mode${mode}.log"
+              grep -q "^P231_DIVIDER_BOUNDARY_RASTER_PASS div=2 words=$words mode=$mode " \
+                "EVIDENCE/P233/div2_words${words}_mode${mode}.log"
+              grep -q "^P232_RGB888_FULL_RASTER_PASS div=2 mode=$mode words=$words epoch1_active=[1-9][0-9]* epoch2_active=[1-9][0-9]* blank=[1-9][0-9]* depth_exposed=0 reset_mask=1 sync_equal=1$" \
+                "EVIDENCE/P233/div2_words${words}_mode${mode}.log"
+            done
+          done
+          test "$(find EVIDENCE/P233 -name '*.log' | wc -l)" -eq 6
+      - name: Preserve exact checkout hash and first failure
+        if: always()
+        run: |
+          mkdir -p EVIDENCE/P233
+          git rev-parse HEAD > EVIDENCE/P233/exact-checkout-sha.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p233-two-cycle-raster-evidence
+          path: EVIDENCE/P233/
+          retention-days: 30
+          if-no-files-found: error
