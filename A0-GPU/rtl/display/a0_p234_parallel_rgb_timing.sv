@@ -55,8 +55,9 @@ module a0_p234_parallel_rgb_timing #(
     assign video_hsync=active ? (MODE==0 ? !h_pulse : h_pulse) : HS_IDLE;
     assign video_vsync=active ? (MODE==0 ? !v_pulse : v_pulse) : VS_IDLE;
 
-    always_ff @(posedge pixel_clk or negedge raw_rst_n or negedge clock_locked) begin
-        if(!raw_rst_n || !clock_locked) begin
+    wire safe_rst_n=raw_rst_n && clock_locked;
+    always_ff @(posedge pixel_clk or negedge safe_rst_n) begin
+        if(!safe_rst_n) begin
             released_q<=0;
             h_q<=0; v_q<=0;
         end else begin
