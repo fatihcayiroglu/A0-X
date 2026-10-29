@@ -1,4 +1,4 @@
-\`timescale 1ns/1ps
+`timescale 1ns/1ps
 // P236: real 35-bit physical dual-clock FIFO producer -> P235 live BRAM,
 // 32x24 tiles displayed across an entire 640x480 or 800x600 RGB888 raster.
 // Includes interrupted clocks, FIFO backpressure, host packet rejection,
