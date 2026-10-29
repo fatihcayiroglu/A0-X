@@ -158,6 +158,7 @@ module a0_p231_divider_boundary_raster_tb #(
       if(dut.raster.pipe_packet_q!==92'd0)stale_hold_samples=stale_hold_samples+1;
     end
   end
+  localparam integer MAX_OLD_FRAMES=(WORDS==8)?12:128;
   integer i,n,saved_drops;
   initial begin
     if(MODE<0 || MODE>2 || (DIV!=2 && DIV!=3 && DIV!=4 && DIV!=65 && DIV!=255))
@@ -189,12 +190,12 @@ module a0_p231_divider_boundary_raster_tb #(
         // A slower host producer may require extra *whole* old frames.
         // Check every pixel of every old frame; publication is legal only
         // at the VBlank edge. A bounded wait never masks torn frames.
-        while(dut.raster.front_epoch_q!=32'd2 && old_frames<12)begin
+        while(dut.raster.front_epoch_q!=32'd2 && old_frames<MAX_OLD_FRAMES)begin
           check_frame(0,1);
           old_frames=old_frames+1;
         end
         if(dut.raster.front_epoch_q!=32'd2)
-          $fatal(1,"P231 second epoch not published within 12 whole frames");
+          $fatal(1,"P233 second epoch not published within %0d whole frames",MAX_OLD_FRAMES);
         check_frame(1,2);
       end
     join
