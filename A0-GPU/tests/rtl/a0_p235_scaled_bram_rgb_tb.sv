@@ -54,6 +54,12 @@ module a0_p235_scaled_bram_rgb_tb #(parameter integer MODE=0);
   logic old_front_bank=0,old_front_valid=0;
   logic [767:0] touched0=0,touched1=0;
   logic guard_enable=0;
+  // Reset or loss of pixel-clock lock invalidates the *previous run's*
+  // front-bank comparison baseline. A normal reset is not a torn frame.
+  always @(negedge rst_n or negedge lock) begin
+    old_front_valid=0;
+    old_front_bank=0;
+  end
   integer monitor_index;
   // Observe every pixel, not just the frames around the successful commit.
   // A later front-bank swap outside x=y=0, a wrong scaled tile index or a
