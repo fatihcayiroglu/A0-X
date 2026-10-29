@@ -1,0 +1,94 @@
+name: A0-X P236 independent host/pixel BRAM FIFO
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/display/a0_p236_async_host_tile.sv'
+      - 'A0-GPU/tests/rtl/a0_p236_async_host_tile_tb.sv'
+      - 'A0-GPU/docs/P236-ASYNC-HOST-TILE-BRIDGE.md'
+      - '.github/workflows/a0-p236-async-host-tile-ecp5.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-cdc-bram-route:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual simulator and ECP5 router
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y iverilog yosys nextpnr-ecp5
+      - name: Real two full 768-word asynchronous tile transfers under FIFO backpressure
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P236
+          for mode in 0 1; do
+            for ratio in 0 1; do
+              iverilog -g2012 -Wall -s a0_p236_async_host_tile_tb \
+                -Pa0_p236_async_host_tile_tb.MODE="$mode" \
+                -Pa0_p236_async_host_tile_tb.CLOCK_MODE="$ratio" \
+                -o "EVIDENCE/P236/mode${mode}_ratio${ratio}.vvp" \
+                A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
+                A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv \
+                A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv \
+                A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv \
+                A0-GPU/rtl/memory/a0_p208_frame_publication_fence.sv \
+                A0-GPU/rtl/display/a0_p209_independent_scanout.sv \
+                A0-GPU/rtl/display/a0_p210_frame_boundary_stream.sv \
+                A0-GPU/rtl/display/a0_p226_unmuxed_pixel_ingress.sv \
+                A0-GPU/rtl/display/a0_p234_parallel_rgb_timing.sv \
+                A0-GPU/rtl/display/a0_p235_scaled_bram_rgb.sv \
+                A0-GPU/rtl/display/a0_p236_async_host_tile.sv \
+                A0-GPU/tests/rtl/a0_p236_async_host_tile_tb.sv
+              timeout 600s vvp "EVIDENCE/P236/mode${mode}_ratio${ratio}.vvp" \
+                | tee "EVIDENCE/P236/mode${mode}_ratio${ratio}.log"
+              grep -Eq "^P236_REAL_CDC_TILE_PASS mode=$mode clock_mode=$ratio banks=2 tile_words=768 source_pixels=1536 commits=2 swaps=2 fifo_stalls=[1-9][0-9]* seen0=[1-9][0-9]* seen1=[1-9][0-9]* stopped_clock_reset=1 invalid_commit_rejected=1 no_torn_frame=1$" \
+                "EVIDENCE/P236/mode${mode}_ratio${ratio}.log"
+            done
+          done
+          test "$(find EVIDENCE/P236 -name 'mode*_ratio*.log' | wc -l)" -eq 4
+      - name: Physically route real Gray FIFO and two BRAM framebuffer banks on ECP5
+        run: |
+          set -euo pipefail
+          for mode in 0 1; do
+            dir="EVIDENCE/P236/route${mode}"
+            mkdir -p "$dir"
+            yosys -Q -T -p "read_verilog -sv A0-GPU/rtl/display/a0_p226_unmuxed_pixel_ingress.sv A0-GPU/rtl/display/a0_p234_parallel_rgb_timing.sv A0-GPU/rtl/display/a0_p235_scaled_bram_rgb.sv A0-GPU/rtl/display/a0_p236_async_host_tile.sv; chparam -set MODE $mode a0_p236_async_host_tile_top; hierarchy -check -top a0_p236_async_host_tile_top; synth_ecp5 -top a0_p236_async_host_tile_top -json $dir/netlist.json; check -assert; stat" \
+              2>&1 | tee "$dir/yosys.log"
+            if [ "$mode" = 0 ]; then required='25.175'; else required='40'; fi
+            timeout 1500s nextpnr-ecp5 --85k --package CABGA381 --speed 6 \
+              --json "$dir/netlist.json" --textcfg "$dir/route.config" \
+              --report "$dir/route.json" --freq "$required" --seed 1 \
+              --lpf-allow-unconstrained 2>&1 | tee "$dir/nextpnr.log"
+            python3 - "$dir" "$mode" "$required" <<'PY'
+          import json,collections,sys
+          from pathlib import Path
+          d=Path(sys.argv[1]);mode=int(sys.argv[2]);req=float(sys.argv[3])
+          mod=json.loads((d/'netlist.json').read_text())['modules']['a0_p236_async_host_tile_top']
+          pins=sum(len(p['bits']) for p in mod['ports'].values())
+          types=collections.Counter(x['type'] for x in mod['cells'].values())
+          assert pins==70,('P236 changed top-level I/O contract',pins)
+          assert types.get('DP16KD',0)>=5,('P236 must physically infer tile banks and FIFO',types)
+          assert types.get('LUT4',0)>=100 and types.get('TRELLIS_FF',0)>=70,('missing real CDC/control',types)
+          assert not any(k.startswith('$') or k.startswith('a0_') or 'LATCH' in k.upper() for k in types),('unmapped/latches',types)
+          clocks=json.loads((d/'route.json').read_text()).get('fmax',{})
+          pixel=min((v['achieved'] for k,v in clocks.items() if 'pixel_clk' in k),default=0)
+          host=min((v['achieved'] for k,v in clocks.items() if 'host_clk' in k),default=0)
+          assert pixel>=req and host>=10,('pixel/host clocks below requirements',pixel,host,req)
+          print(f'P236_CDC_ECP5_ROUTE_PASS mode={mode} pins={pins} ebr={types["DP16KD"]} lut4={types["LUT4"]} ff={types["TRELLIS_FF"]} host_mhz={host:.4f} pixel_mhz={pixel:.4f} pixel_required={req:.3f} physical_board=0 cdc_mtbf_signoff=0')
+          PY
+          done
+      - name: Keep exact checkout and first failure logs
+        if: always()
+        run: |
+          mkdir -p EVIDENCE/P236
+          git rev-parse HEAD > EVIDENCE/P236/exact-checkout.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p236-actual-cdc-bram-evidence
+          path: EVIDENCE/P236/
+          retention-days: 30
+          if-no-files-found: error
