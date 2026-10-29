@@ -1,0 +1,91 @@
+name: A0-X P234 parallel RGB standard mode bring-up
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/display/a0_p234_parallel_rgb_timing.sv'
+      - 'A0-GPU/tests/rtl/a0_p234_parallel_rgb_timing_tb.sv'
+      - 'A0-GPU/docs/P234-PARALLEL-RGB-TIMING.md'
+      - '.github/workflows/a0-p234-rgb-timing-ecp5.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  actual-video-modes-and-ecp5:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Icarus, Yosys and nextpnr ECP5
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y iverilog yosys nextpnr-ecp5
+      - name: Require exact complete 640x480 and 800x600 frame timing
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P234
+          for mode in 0 1; do
+            iverilog -g2012 -Wall -s a0_p234_parallel_rgb_timing_tb \
+              -Pa0_p234_parallel_rgb_timing_tb.MODE="$mode" \
+              -o "EVIDENCE/P234/mode${mode}.vvp" \
+              A0-GPU/rtl/display/a0_p234_parallel_rgb_timing.sv \
+              A0-GPU/tests/rtl/a0_p234_parallel_rgb_timing_tb.sv
+            timeout 240s vvp "EVIDENCE/P234/mode${mode}.vvp" | tee "EVIDENCE/P234/mode${mode}.log"
+          done
+          grep -q '^P234_FULL_TIMING_PASS mode=0 active=921600 blank=338400 hsync=151200 vsync=4800 full_frames=3 locked_reset=1 stopped_clock_async_reset=1 2ns_pulse=1 colorbars=8$' EVIDENCE/P234/mode0.log
+          grep -q '^P234_FULL_TIMING_PASS mode=1 active=1440000 blank=549504 hsync=241152 vsync=12672 full_frames=3 locked_reset=1 stopped_clock_async_reset=1 2ns_pulse=1 colorbars=8$' EVIDENCE/P234/mode1.log
+      - name: Prove unsupported mode is rejected in running RTL, not compile failure
+        run: |
+          set -euo pipefail
+          iverilog -g2012 -s a0_p234_parallel_rgb_timing \
+            -Pa0_p234_parallel_rgb_timing.MODE=2 \
+            -o EVIDENCE/P234/reject_mode.vvp A0-GPU/rtl/display/a0_p234_parallel_rgb_timing.sv
+          if timeout 15s vvp EVIDENCE/P234/reject_mode.vvp > EVIDENCE/P234/reject_mode.log 2>&1; then
+            echo 'ERROR: invalid mode was not rejected by RTL' >&2
+            exit 1
+          fi
+          grep -q 'FATAL:.*P234 unsupported fixed video timing mode' EVIDENCE/P234/reject_mode.log
+      - name: Independently synthesize and physically route both timing generators
+        run: |
+          set -euo pipefail
+          for mode in 0 1; do
+            mkdir -p "EVIDENCE/P234/route${mode}"
+            dir="EVIDENCE/P234/route${mode}"
+            yosys -Q -T -p "read_verilog -sv A0-GPU/rtl/display/a0_p234_parallel_rgb_timing.sv; chparam -set MODE $mode a0_p234_parallel_rgb_timing; hierarchy -check -top a0_p234_parallel_rgb_timing; synth_ecp5 -top a0_p234_parallel_rgb_timing -json $dir/netlist.json; check -assert; stat" \
+              2>&1 | tee "$dir/yosys.log"
+            if [ "$mode" = 0 ]; then mhz='25.175'; else mhz='40'; fi
+            timeout 900s nextpnr-ecp5 --85k --package CABGA381 --speed 6 \
+              --json "$dir/netlist.json" --textcfg "$dir/route.config" \
+              --report "$dir/route.json" --freq "$mhz" \
+              --seed 1 --lpf-allow-unconstrained \
+              2>&1 | tee "$dir/nextpnr.log"
+            python3 - "$dir" "$mode" "$mhz" <<'PY'
+          import collections,json,sys
+          from pathlib import Path
+          d=Path(sys.argv[1]);mode=int(sys.argv[2]);required=float(sys.argv[3])
+          top=json.loads((d/'netlist.json').read_text())['modules']['a0_p234_parallel_rgb_timing']
+          pins=sum(len(v['bits']) for v in top['ports'].values())
+          types=collections.Counter(v['type'] for v in top['cells'].values())
+          assert pins==30,('P234: expected 3 inputs and 27 RGB/sync outputs',pins)
+          assert 30<=types.get('LUT4',0)<3000,('missing/oversized real counter and colorbar logic',types)
+          assert types.get('TRELLIS_FF',0)>=20,('pixel timing state absent',types)
+          assert types.get('DP16KD',0)==0,('timing-only top must not claim framebuffer VRAM',types)
+          assert not any(x.startswith('$') or x.startswith('a0_') or 'LATCH' in x.upper() for x in types),('unmapped/latch',types)
+          freqs=json.loads((d/'route.json').read_text()).get('fmax',{})
+          achieved=min((v['achieved'] for k,v in freqs.items() if 'pixel_clk' in k),default=0)
+          assert achieved>=required,('P234 pixel clock failed mode requirement',mode,required,achieved)
+          print(f'P234_PARALLEL_RGB_ECP5_ROUTE_PASS mode={mode} pins={pins} lut4={types["LUT4"]} ff={types["TRELLIS_FF"]} ebr=0 pixel_mhz={achieved:.4f} nominal_mhz={required:.3f} physical_board=0')
+          PY
+          done
+      - name: Save exact checkout SHA and all first failure logs
+        if: always()
+        run: |
+          mkdir -p EVIDENCE/P234
+          git rev-parse HEAD > EVIDENCE/P234/checkout-sha.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p234-actual-parallel-rgb-mode-evidence
+          path: EVIDENCE/P234/
+          if-no-files-found: error
+          retention-days: 30
