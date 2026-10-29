@@ -1,0 +1,82 @@
+name: A0-X P235 real two-bank BRAM scaled VGA/SVGA raster
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/display/a0_p235_scaled_bram_rgb.sv'
+      - 'A0-GPU/tests/rtl/a0_p235_scaled_bram_rgb_tb.sv'
+      - 'A0-GPU/docs/P235-SCALED-DUAL-BRAM-RASTER.md'
+      - '.github/workflows/a0-p235-scaled-bram-ecp5.yml'
+      - 'A0-GPU/rtl/display/a0_p234_parallel_rgb_timing.sv'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p235-exhaustive-real-tile-raster:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual RTL simulator and ECP5 implementation tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y iverilog yosys nextpnr-ecp5
+      - name: Verify every real BRAM tile pixel and both atomic publications at full VGA and SVGA resolution
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P235
+          for mode in 0 1; do
+            iverilog -g2012 -Wall -s a0_p235_scaled_bram_rgb_tb \
+              -Pa0_p235_scaled_bram_rgb_tb.MODE="$mode" \
+              -o "EVIDENCE/P235/mode${mode}.vvp" \
+              A0-GPU/rtl/display/a0_p234_parallel_rgb_timing.sv \
+              A0-GPU/rtl/display/a0_p235_scaled_bram_rgb.sv \
+              A0-GPU/tests/rtl/a0_p235_scaled_bram_rgb_tb.sv
+            timeout 600s vvp "EVIDENCE/P235/mode${mode}.vvp" \
+              | tee "EVIDENCE/P235/mode${mode}.log"
+            grep -Eq "^P235_SCALED_BRAM_PASS mode=$mode tile=32x24 bank_words=768 distinct_banks=2 wraps=2 touched_bank0=768 touched_bank1=768 active0=[1-9][0-9]* active1=[1-9][0-9]* incomplete_reject=1 frame_atomic=1 sync_reference=1 stopped_reset=1 bram_scrub_claim=0$" \
+              "EVIDENCE/P235/mode${mode}.log"
+          done
+      - name: Route actual 2-bank BRAM top for each external nominal pixel clock
+        run: |
+          set -euo pipefail
+          for mode in 0 1; do
+            dir="EVIDENCE/P235/route${mode}"
+            mkdir -p "$dir"
+            yosys -Q -T -p "read_verilog -sv A0-GPU/rtl/display/a0_p234_parallel_rgb_timing.sv A0-GPU/rtl/display/a0_p235_scaled_bram_rgb.sv; chparam -set MODE $mode a0_p235_scaled_bram_rgb; hierarchy -check -top a0_p235_scaled_bram_rgb; synth_ecp5 -top a0_p235_scaled_bram_rgb -json $dir/netlist.json; check -assert; stat" \
+              2>&1 | tee "$dir/yosys.log"
+            if [ "$mode" = 0 ]; then required='25.175'; else required='40'; fi
+            timeout 1500s nextpnr-ecp5 --85k --package CABGA381 --speed 6 \
+              --json "$dir/netlist.json" --textcfg "$dir/route.config" \
+              --report "$dir/route.json" --freq "$required" --seed 1 \
+              --lpf-allow-unconstrained 2>&1 | tee "$dir/nextpnr.log"
+            python3 - "$dir" "$mode" "$required" <<'PY'
+          import json,collections,sys
+          from pathlib import Path
+          d=Path(sys.argv[1]); mode=int(sys.argv[2]); required=float(sys.argv[3])
+          module=json.loads((d/'netlist.json').read_text())['modules']['a0_p235_scaled_bram_rgb']
+          pins=sum(len(p['bits']) for p in module['ports'].values())
+          cells=collections.Counter(x['type'] for x in module['cells'].values())
+          assert pins==69,('P235 host/pixel output pin contract changed',pins)
+          assert cells.get('DP16KD',0)>=2,('P235 does not contain physical BRAM',cells)
+          assert 60<=cells.get('LUT4',0)<10000,('P235 missing/excessive real tile scaler logic',cells)
+          assert cells.get('TRELLIS_FF',0)>=30,('P235 registered timing/publish logic absent',cells)
+          assert not any(t.startswith('$') or t.startswith('a0_') or 'LATCH' in t.upper() for t in cells),('Unmapped/blackbox/latch',cells)
+          clocks=json.loads((d/'route.json').read_text()).get('fmax',{})
+          achieved=min((v['achieved'] for k,v in clocks.items() if 'pixel_clk' in k),default=0)
+          assert achieved>=required,('P235 externally required pixel clock failed',mode,required,achieved)
+          print(f'P235_SCALED_BRAM_ECP5_ROUTE_PASS mode={mode} pins={pins} ebr={cells["DP16KD"]} lut4={cells["LUT4"]} ff={cells["TRELLIS_FF"]} pixel_mhz={achieved:.4f} external_required_mhz={required:.3f} board_signoff=0 full_resolution_vram=0')
+          PY
+          done
+      - name: Preserve checked-out commit and first-failure evidence
+        if: always()
+        run: |
+          mkdir -p EVIDENCE/P235
+          git rev-parse HEAD > EVIDENCE/P235/checked-out-sha.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p235-scaled-two-bank-bram-evidence
+          path: EVIDENCE/P235/
+          if-no-files-found: error
+          retention-days: 30
