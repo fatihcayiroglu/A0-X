@@ -1,0 +1,105 @@
+name: A0-X P232 RGB888 physical scanout and full-frame proof
+on:
+  pull_request:
+    paths:
+      - 'A0-GPU/rtl/display/a0_p232_rgb888_scanout.sv'
+      - 'A0-GPU/tests/rtl/a0_p232_rgb888_scanout_tb.sv'
+      - 'A0-GPU/docs/P232-RGB888-SCANOUT-ADAPTER.md'
+      - '.github/workflows/a0-p232-rgb888-scanout-ecp5.yml'
+      - 'A0-GPU/tests/rtl/a0_p231_divider_boundary_raster_tb.sv'
+      - 'A0-GPU/rtl/display/a0_p226_unmuxed_pixel_ingress.sv'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p232-rgb888-real-ebrs-and-route:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual Icarus, Yosys and nextpnr ECP5
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y iverilog yosys nextpnr-ecp5
+      - name: Prove RGB888 packing never emits depth, fault or reset leakage
+        run: |
+          set -euo pipefail
+          mkdir -p EVIDENCE/P232/rtl EVIDENCE/P232/route
+          iverilog -g2012 -Wall -s a0_p232_rgb888_output_unit_tb \
+            -o EVIDENCE/P232/rtl/adapter_unit.vvp \
+            A0-GPU/rtl/display/a0_p232_rgb888_scanout.sv \
+            A0-GPU/tests/rtl/a0_p232_rgb888_scanout_tb.sv
+          timeout 60s vvp EVIDENCE/P232/rtl/adapter_unit.vvp | tee EVIDENCE/P232/rtl/adapter_unit.log
+          grep -q '^P232_RGB888_UNIT_PASS depth_discard=1 reset_blank=1 fault_blank=1 de_blank=1 ce_strobe=1 sync_idle_high=1$' \
+            EVIDENCE/P232/rtl/adapter_unit.log
+      - name: Validate 12 complete RGB888 rasters against independent P226 full framebuffer
+        run: |
+          set -euo pipefail
+          for div in 3 4 65 255; do
+            for mode in 0 1 2; do
+              iverilog -g2012 -Wall -s a0_p232_full_rgb888_raster_tb \
+                -Pa0_p232_full_rgb888_raster_tb.DIV="$div" \
+                -Pa0_p232_full_rgb888_raster_tb.MODE="$mode" \
+                -o "EVIDENCE/P232/rtl/div_${div}_mode_${mode}.vvp" \
+                A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv \
+                A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv \
+                A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv \
+                A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv \
+                A0-GPU/rtl/memory/a0_p208_frame_publication_fence.sv \
+                A0-GPU/rtl/display/a0_p209_independent_scanout.sv \
+                A0-GPU/rtl/display/a0_p210_frame_boundary_stream.sv \
+                A0-GPU/rtl/display/a0_p226_unmuxed_pixel_ingress.sv \
+                A0-GPU/rtl/display/a0_p232_rgb888_scanout.sv \
+                A0-GPU/tests/rtl/a0_p231_divider_boundary_raster_tb.sv \
+                A0-GPU/tests/rtl/a0_p232_rgb888_scanout_tb.sv
+              timeout 240s vvp "EVIDENCE/P232/rtl/div_${div}_mode_${mode}.vvp" \
+                | tee "EVIDENCE/P232/rtl/div_${div}_mode_${mode}.log"
+              grep -q "^P231_DIVIDER_BOUNDARY_RASTER_PASS div=$div words=8 mode=$mode " \
+                "EVIDENCE/P232/rtl/div_${div}_mode_${mode}.log"
+              grep -q "^P232_RGB888_FULL_RASTER_PASS div=$div mode=$mode epoch1_active=[1-9][0-9]* epoch2_active=[1-9][0-9]* blank=[1-9][0-9]* depth_exposed=0 reset_mask=1 sync_equal=1$" \
+                "EVIDENCE/P232/rtl/div_${div}_mode_${mode}.log"
+            done
+          done
+          test "$(find EVIDENCE/P232/rtl -name 'div_*_mode_*.log' | wc -l)" -eq 12
+      - name: Physically synthesize and route actual RGB888 EBR top on ECP5
+        run: |
+          set -euo pipefail
+          yosys -Q -T -p 'read_verilog -sv A0-GPU/rtl/memory/a0_p203_tagged_controller_bridge.sv A0-GPU/rtl/memory/a0_p205_narrow_p203_mailbox.sv A0-GPU/rtl/memory/a0_p206_committed_bram_top.sv A0-GPU/rtl/memory/a0_p207_two_bram_banks.sv A0-GPU/rtl/memory/a0_p208_frame_publication_fence.sv A0-GPU/rtl/display/a0_p209_independent_scanout.sv A0-GPU/rtl/display/a0_p210_frame_boundary_stream.sv A0-GPU/rtl/display/a0_p226_unmuxed_pixel_ingress.sv A0-GPU/rtl/display/a0_p232_rgb888_scanout.sv; hierarchy -check -top a0_p232_domain_local_rgb888_raster; synth_ecp5 -top a0_p232_domain_local_rgb888_raster -json EVIDENCE/P232/route/netlist.json; check -assert; stat' \
+            2>&1 | tee EVIDENCE/P232/route/yosys.log
+          grep -q 'Found and reported 0 problems.' EVIDENCE/P232/route/yosys.log
+          timeout 1500s nextpnr-ecp5 --85k --package CABGA381 --speed 6 \
+            --json EVIDENCE/P232/route/netlist.json \
+            --textcfg EVIDENCE/P232/route/route.config \
+            --report EVIDENCE/P232/route/route.json \
+            --freq 10 --lpf-allow-unconstrained --seed 1 \
+            2>&1 | tee EVIDENCE/P232/route/nextpnr.log
+          python3 - <<'PY'
+          import json,collections
+          from pathlib import Path
+          p=Path('EVIDENCE/P232/route')
+          top=json.loads((p/'netlist.json').read_text())['modules']['a0_p232_domain_local_rgb888_raster']
+          pins=sum(len(v['bits']) for v in top['ports'].values())
+          cells=collections.Counter(v['type'] for v in top['cells'].values())
+          assert pins==59,('P232 color-only output requires exactly 59 I/O bits',pins)
+          assert cells.get('DP16KD',0)>=15,('physical committed producer EBR absent',cells)
+          assert cells.get('LUT4',0)>=1000 and cells.get('TRELLIS_FF',0)>=3000,('physical raster control absent',cells)
+          assert not any(k.startswith('$') or k.startswith('a0_') or 'LATCH' in k.upper() for k in cells),('unmapped/blackbox/latch',cells)
+          fmax=json.loads((p/'route.json').read_text()).get('fmax',{})
+          host=min((v['achieved'] for k,v in fmax.items() if 'host_clk' in k),default=0)
+          pixel=min((v['achieved'] for k,v in fmax.items() if 'pixel_clk' in k),default=0)
+          assert host>=10 and pixel>=10,('missing independent clocks or below experimental floor',fmax)
+          print('P232_RGB888_ECP5_ROUTE_PASS pins=%d ebr=%d lut4=%d ff=%d host_mhz=%.4f pixel_mhz=%.4f board_signoff=0 hdmi_phy=0'%(pins,cells['DP16KD'],cells['LUT4'],cells['TRELLIS_FF'],host,pixel))
+          PY
+      - name: Preserve first-failure evidence and exact checkout SHA without retries
+        if: always()
+        run: |
+          mkdir -p EVIDENCE/P232
+          git rev-parse HEAD > EVIDENCE/P232/checked_out_sha.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p232-rgb888-scanout-physical-evidence
+          path: EVIDENCE/P232/
+          retention-days: 30
+          if-no-files-found: error
