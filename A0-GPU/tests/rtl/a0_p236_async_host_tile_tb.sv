@@ -102,6 +102,9 @@ module a0_p236_async_host_tile_tb #(
   always @(negedge rst_n or negedge locked)begin
     prev_front_valid=0;prev_front_bank=0;
   end
+  always @(negedge rst_n)begin
+    pop_data=0;pop_commit=0; // count accepted BRAM transfers since last true reset
+  end
 
   task automatic send(input logic commit,input integer idx,input logic [23:0] color);
     integer timeout_edges;
@@ -191,13 +194,11 @@ module a0_p236_async_host_tile_tb #(
     #2;
     if(swaps!=2 || !(&covered0) || !(&covered1) ||
        active0<HA*VA || active1<HA*VA ||
-       pop_data!=1537 || pop_commit!=2 ||
+       pop_data!=1536 || pop_commit!=2 ||
        stalls<10 || blank_samples<HT)
       $fatal(1,"P236 coverage/handshakes insufficient swaps=%0d active=%0d,%0d pop=%0d,%0d stalls=%0d",
         swaps,active0,active1,pop_data,pop_commit,stalls);
-    // Pop count includes one deliberately malformed first frame word;
-    // after the reset, only the two full 768-word frames count. See
-    // reset of the counters below if the simulator tracks prior traffic.
+    // Pop count excludes the deliberately rejected pre-reset frame.
 
     // Live nonzero output must vanish with a short async raw reset even
     // when pixel_clk is fully stopped; the FIFO's unreset BRAM never
