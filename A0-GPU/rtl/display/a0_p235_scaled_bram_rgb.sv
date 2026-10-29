@@ -46,6 +46,10 @@ module a0_p235_scaled_bram_rgb #(
   logic [1:0] released_q=0;
   logic [10:0] h_q=0;
   logic [9:0] v_q=0;
+  // P235 timing fix: incremental tile/scale phases replace constant
+  // division in the synchronous BRAM read-address critical path.
+  logic [4:0] tile_x_q=0,tile_y_q=0;
+  logic [4:0] repeat_x_q=0,repeat_y_q=0;
   logic front_valid_q=0,front_bank_q=0,stage_valid_q=0,fault_q=0;
   logic [9:0] load_count_q=0;
   logic [23:0] read0_q=0,read1_q=0;
@@ -66,13 +70,21 @@ module a0_p235_scaled_bram_rgb #(
   // exactly the same two-edge local reset/clock-lock release.
   wire enabled=safe_rst_n && released_q[1] && !fault_q;
   wire frame_wrap=enabled && h_q==11'(HT-1) && v_q==10'(VT-1);
-  wire [10:0] next_h = !released_q[1] || h_q==11'(HT-1) ?
+  wire line_wrap=(h_q==11'(HT-1));
+  wire next_col=(h_q<HA-1 && repeat_x_q==5'(SCALE-1));
+  wire next_row=(line_wrap && v_q<VA-1 && repeat_y_q==5'(SCALE-1));
+  wire [10:0] next_h = !released_q[1] || line_wrap ?
                        11'd0 : h_q+11'd1;
   wire [9:0] next_v = !released_q[1] ? 10'd0 :
-                      h_q==11'(HT-1) ?
+                      line_wrap ?
                       (v_q==10'(VT-1) ? 10'd0 : v_q+10'd1) : v_q;
   wire next_active=(next_h<HA && next_v<VA);
-  wire [9:0] read_index=10'(((next_v/SCALE)*TILE_W)+(next_h/SCALE));
+  wire [4:0] next_tile_x = (!released_q[1] || line_wrap) ? 5'd0 :
+                            next_col ? tile_x_q+5'd1 : tile_x_q;
+  wire [4:0] next_tile_y = (!released_q[1] || frame_wrap) ? 5'd0 :
+                            next_row ? tile_y_q+5'd1 : tile_y_q;
+  // 32 tiles/row: concatenation is an exact address, never a divider.
+  wire [9:0] read_index={next_tile_y,next_tile_x};
   wire read_bank= (frame_wrap && stage_valid_q) ? !front_bank_q : front_bank_q;
   wire read_en=enabled && next_active &&
                (front_valid_q || (frame_wrap && stage_valid_q));
@@ -103,6 +115,7 @@ module a0_p235_scaled_bram_rgb #(
     if(!safe_rst_n) begin
       released_q<=0;
       h_q<=0;v_q<=0;
+      tile_x_q<=0;tile_y_q<=0;repeat_x_q<=0;repeat_y_q<=0;
       load_count_q<=0;
       front_valid_q<=0;front_bank_q<=0;stage_valid_q<=0;
       fault_q<=0;
@@ -110,11 +123,28 @@ module a0_p235_scaled_bram_rgb #(
       released_q<={released_q[0],1'b1};
       if(!released_q[1]) begin
         h_q<=0;v_q<=0;
-      end else if(h_q==11'(HT-1)) begin
-        h_q<=0;
-        if(v_q==10'(VT-1))v_q<=0;
-        else v_q<=v_q+10'd1;
-      end else h_q<=h_q+11'd1;
+        tile_x_q<=0;tile_y_q<=0;
+        repeat_x_q<=0;repeat_y_q<=0;
+      end else if(line_wrap) begin
+        h_q<=0;tile_x_q<=0;repeat_x_q<=0;
+        if(v_q==10'(VT-1)) begin
+          v_q<=0;tile_y_q<=0;repeat_y_q<=0;
+        end else begin
+          v_q<=v_q+10'd1;
+          if(v_q<VA-1) begin
+            if(repeat_y_q==5'(SCALE-1)) begin
+              repeat_y_q<=0;tile_y_q<=tile_y_q+5'd1;
+            end else repeat_y_q<=repeat_y_q+5'd1;
+          end
+        end
+      end else begin
+        h_q<=h_q+11'd1;
+        if(h_q<HA-1) begin
+          if(repeat_x_q==5'(SCALE-1)) begin
+            repeat_x_q<=0;tile_x_q<=tile_x_q+5'd1;
+          end else repeat_x_q<=repeat_x_q+5'd1;
+        end
+      end
       if(enabled) begin
         // Error is sticky until asynchronous board reset or lock loss.
         // An incomplete frame cannot be published.
