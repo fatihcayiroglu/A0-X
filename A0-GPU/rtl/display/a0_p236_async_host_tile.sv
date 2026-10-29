@@ -1,4 +1,4 @@
-\`timescale 1ns/1ps
+`timescale 1ns/1ps
 // P236: independent host-clock *tile upload* to the P235 pixel-clock-local
 // dual-bank EBR renderer. Reuses the P226 Gray-pointer, double-synchronized
 // asynchronous FIFO (no combinational cross-domain data/control).
